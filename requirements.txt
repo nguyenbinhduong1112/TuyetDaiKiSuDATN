@@ -1,0 +1,9 @@
+torch
+numpy
+streamlit
+folium
+streamlit-folium
+osmnx
+networkx
+pandas
+scipy
