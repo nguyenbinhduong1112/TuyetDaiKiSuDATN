@@ -18,6 +18,11 @@ SERVER_NAME = 'DESKTOP-U4FQD35'
 DATABASE_NAME = 'LogisticsDB'
 CONN_STR = f"Driver={{SQL Server}};Server={SERVER_NAME};Database={DATABASE_NAME};Trusted_Connection=yes;"
 
+# --- PHỤC HỒI TRÍ NHỚ TỪ URL KHI F5 (BỔ SUNG MỚI) ---
+if "user" in st.query_params and "role" in st.query_params:
+    st.session_state.username = st.query_params["user"]
+    st.session_state.role = st.query_params["role"]
+
 # --- HÀM HỖ TRỢ ĐỌC ẢNH SANG BASE64 ---
 def get_base64_of_bin_file(bin_file):
     try:
@@ -46,12 +51,11 @@ st.markdown(f"""
     <div class="bg-watermark"></div>
     """, unsafe_allow_html=True)
 
-# --- BACKEND DATABASE ĐÃ NÂNG CẤP KIỂM TRA KHÓA ---
+# --- BACKEND DATABASE ---
 def init_db():
     try:
         conn = pyodbc.connect(CONN_STR)
         cursor = conn.cursor()
-        # Tạo bảng nếu chưa có, tích hợp luôn cột is_locked
         cursor.execute('''
             IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='userstable' and xtype='U')
             CREATE TABLE userstable (
@@ -73,15 +77,12 @@ def login_user(username, password):
     try:
         conn = pyodbc.connect(CONN_STR)
         cursor = conn.cursor()
-        # Lấy cả quyền (role) và trạng thái khóa (is_locked)
         cursor.execute('SELECT role, ISNULL(is_locked, 0) FROM userstable WHERE username = ? AND password = ?', (username, password))
         data = cursor.fetchone()
         conn.close()
-        
         if data:
-            if data[1] == 1: # Nếu is_locked = 1
-                return "LOCKED"
-            return data[0] # Trả về role (1, 2, 3) nếu bình thường
+            if data[1] == 1: return "LOCKED"
+            return data[0]
         return None
     except: return None
 
@@ -114,10 +115,13 @@ def login_page():
                 if st.button("Đăng nhập ngay", type="primary"):
                     result = login_user(user, pwd)
                     if result == "LOCKED":
-                        st.error("Tài khoản của bạn đã bị quản trị viên khóa!")
+                        st.error("Tài khẩu đã bị khóa!")
                     elif result is not None:
+                        # LƯU VÀO SESSION VÀ ĐẨY LÊN URL CHỐNG F5
                         st.session_state.role = result
                         st.session_state.username = user
+                        st.query_params["user"] = user
+                        st.query_params["role"] = str(result)
                         st.rerun()
                     else: st.error("Sai tài khoản hoặc mật khẩu!")
             
@@ -133,13 +137,12 @@ def login_page():
                         else: st.error("Tên tài khoản đã tồn tại!")
                     else: st.warning("Điền đủ thông tin.")
 
-# --- ĐIỀU HƯỚNG THEO ID (ĐÃ XÓA HẲN THUỘC TÍNH ICON) ---
+# --- ĐIỀU HƯỚNG ---
 page_login = st.Page(login_page, title="Đăng nhập")
 page_admin = st.Page("admin.py", title="Quản trị viên")
 page_driver = st.Page("app.py", title="Bản đồ AI Logistics")
 page_user = st.Page("user.py", title="Mua sắm trực tuyến")
 
-# Dùng str() để ép kiểu, chấp mọi thể loại Database trả về là số hay chữ
 if st.session_state.role is None: 
     pg = st.navigation([page_login])
 elif str(st.session_state.role) == "1": 
