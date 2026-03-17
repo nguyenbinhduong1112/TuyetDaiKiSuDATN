@@ -115,7 +115,7 @@ def login_page():
                 if st.button("Đăng nhập ngay", type="primary"):
                     result = login_user(user, pwd)
                     if result == "LOCKED":
-                        st.error("Tài khẩu đã bị khóa!")
+                        st.error("Tài khoản đã bị khóa!")
                     elif result is not None:
                         # LƯU VÀO SESSION VÀ ĐẨY LÊN URL CHỐNG F5
                         st.session_state.role = result
