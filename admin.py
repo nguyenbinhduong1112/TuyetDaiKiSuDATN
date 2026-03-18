@@ -22,6 +22,8 @@ if "user" in st.query_params and "role" in st.query_params:
     st.session_state.username = st.query_params["user"]
     st.session_state.role = st.query_params["role"]
 
+# --- TỐI ƯU CỐT LÕI: ĐỌC ẢNH 1 LẦN VÀO RAM ---
+@st.cache_data
 def get_base64_of_bin_file(bin_file):
     try:
         with open(bin_file, 'rb') as f:
@@ -33,37 +35,15 @@ st.set_page_config(layout="wide", page_title="Quản trị - UMBRELLA LOGISTICS"
 bg_img_b64 = get_base64_of_bin_file(r"D:\datn\img\E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png")
 
 # NHÚNG THƯ VIỆN FONTAWESOME 6 VÀ FIX LỖI STREAMLIT RENDER CSS
-st.markdown(f"""
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-    .stApp {{ background-color: #0E1117; color: white; }}
-    [data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}
-    div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; }}
-    .stDataFrame {{ border-radius: 8px; border: 1px solid #333; }}
-    [data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}
-    [data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}
-    [data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}
-    [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}
-    [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}
-    [data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}
-    [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}
-    [data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f279'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}
-    [data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}
-    [data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f4fc'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}
-    [data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f0c0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}
-    [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}
-    div[data-testid="stPopover"] > button {{ background-color: #1A1C24 !important; color: white !important; border: 1px solid #333 !important; opacity: 1 !important; }}
-    div[data-testid="stPopover"] > button:hover {{ background-color: #21262d !important; border-color: #FF4B4B !important; }}
-    .bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}
-    </style>
-    <div class="bg-watermark"></div>
-""", unsafe_allow_html=True)
+st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; }}.stDataFrame {{ border-radius: 8px; border: 1px solid #333; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f279'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f4fc'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f0c0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}div[data-testid="stPopover"] > button {{ background-color: #1A1C24 !important; color: white !important; border: 1px solid #333 !important; opacity: 1 !important; }}div[data-testid="stPopover"] > button:hover {{ background-color: #21262d !important; border-color: #FF4B4B !important; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
 
 # KIỂM TRA BẢO MẬT
 if "username" not in st.session_state or str(st.session_state.role) != "1":
     st.warning("Vui lòng đăng nhập bằng tài khoản Quản trị viên!")
     st.stop()
 
+# --- TỐI ƯU CỐT LÕI: CACHE TRUY VẤN SQL ---
+@st.cache_data(ttl=300) 
 def get_warehouse_loc():
     try:
         conn = pyodbc.connect(CONN_STR)
@@ -72,6 +52,7 @@ def get_warehouse_loc():
         return [df.iloc[0]['lat'], df.iloc[0]['lon']] if not df.empty else [18.6601, 105.6942]
     except: return [18.6601, 105.6942]
 
+@st.cache_data(ttl=15) 
 def get_active_points():
     try:
         conn = pyodbc.connect(CONN_STR)
@@ -80,6 +61,7 @@ def get_active_points():
         return df
     except: return pd.DataFrame()
 
+@st.cache_data(ttl=30) 
 def get_all_users():
     try:
         conn = pyodbc.connect(CONN_STR)
@@ -90,6 +72,15 @@ def get_all_users():
         return df
     except: return pd.DataFrame()
 
+@st.cache_data(ttl=15)
+def get_pending_orders():
+    try:
+        conn = pyodbc.connect(CONN_STR)
+        count = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE delivery_status = N'Đang chờ duyệt'", conn).iloc[0,0]
+        conn.close()
+        return count
+    except: return 0
+
 def update_user_info(username, new_fullname, is_locked):
     try:
         conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
@@ -98,27 +89,15 @@ def update_user_info(username, new_fullname, is_locked):
         return True
     except: return False
 
-# --- KIỂM TRA ĐƠN CHỜ DUYỆT ĐỂ BẬT CHẤM ĐỎ TRÊN MENU ---
-try:
-    conn_check = pyodbc.connect(CONN_STR)
-    pending_orders = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE delivery_status = N'Đang chờ duyệt'", conn_check).iloc[0,0]
-    conn_check.close()
-except: 
-    pending_orders = 0
-
-# --- CSS TẠO CHẤM ĐỎ CÓ HIỆU ỨNG NHỊP ĐẬP (PULSE) BÊN PHẢI MENU ĐƠN HÀNG ---
-if pending_orders > 0:
-    st.markdown("""
-        <style>
-        [data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) { position: relative; }
-        [data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2)::after { content: ''; position: absolute; top: 50%; right: 15px; transform: translateY(-50%); width: 10px; height: 10px; background-color: #FF4B4B; border-radius: 50%; box-shadow: 0 0 8px #FF4B4B; z-index: 99; animation: pulse 1.5s infinite; }
-        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0.7); } 70% { box-shadow: 0 0 0 8px rgba(255, 75, 75, 0); } 100% { box-shadow: 0 0 0 0 rgba(255, 75, 75, 0); } }
-        </style>
-    """, unsafe_allow_html=True)
-
+# LẤY DỮ LIỆU TỪ CACHE
+pending_orders = get_pending_orders()
 df_users = get_all_users()
 wh_loc = get_warehouse_loc()
 active_points = get_active_points()
+
+# --- CSS TẠO CHẤM ĐỎ TĨNH NHƯ SỐ MŨ CHO MENU QUẢN LÝ ĐƠN HÀNG ---
+if pending_orders > 0:
+    st.markdown("""<style>[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::after { content: ''; display: inline-block; width: 8px; height: 8px; background-color: #FF4B4B; border-radius: 50%; margin-left: 3px; transform: translateY(-8px); }</style>""", unsafe_allow_html=True)
 
 # ==========================================
 # 2. HEADER
@@ -134,13 +113,12 @@ with col_user:
             st.session_state.role = None; st.session_state.username = None; st.query_params.clear(); st.rerun()
 
 # ==========================================
-# 3. SIDEBAR (MENU TRƯỢT TỐI ƯU GIAO DIỆN)
+# 3. SIDEBAR (MENU TRƯỢT KÈM LOGO)
 # ==========================================
-try:
-    with open(r"D:\datn\img\19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png", "rb") as f:
-        logo_head_b64 = base64.b64encode(f.read()).decode()
+logo_head_b64 = get_base64_of_bin_file(r"D:\datn\img\19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png")
+if logo_head_b64:
     logo_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
-except: 
+else:
     logo_html = '<i class="fa-solid fa-truck-fast" style="font-size: 30px; margin-right: 12px; color: white; z-index: 2; position: relative;"></i>'
 
 with st.sidebar:
@@ -215,14 +193,18 @@ if menu_selection == "Bản đồ Điều phối":
                     if loc:
                         conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                         cursor.execute("UPDATE WarehouseConfig SET lat=?, lon=? WHERE id=1", (loc.latitude, loc.longitude))
-                        conn.commit(); conn.close(); st.rerun()
+                        conn.commit(); conn.close()
+                        get_warehouse_loc.clear()
+                        st.rerun()
             with t2:
                 st.info("Vui lòng chọn trên bản đồ để ghim vị trí")
                 if map_data and map_data.get("last_clicked"):
                     if st.button("Xác nhận đổi Kho tại đây"):
                         conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                         cursor.execute("UPDATE WarehouseConfig SET lat=?, lon=? WHERE id=1", (map_data['last_clicked']['lat'], map_data['last_clicked']['lng']))
-                        conn.commit(); conn.close(); st.rerun()
+                        conn.commit(); conn.close()
+                        get_warehouse_loc.clear()
+                        st.rerun()
 
     with col_list:
         st.subheader("Quản lý Đơn hàng")
@@ -236,14 +218,18 @@ if menu_selection == "Bản đồ Điều phối":
                         if loc:
                             conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                             cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận')", (loc.latitude, loc.longitude, "Chờ xử lý", "admin"))
-                            conn.commit(); conn.close(); st.rerun()
+                            conn.commit(); conn.close()
+                            get_active_points.clear()
+                            st.rerun()
                 with t4:
                     st.markdown("<p style='font-size:14px; margin-bottom:10px; color:#8b949e;'>Vui lòng chọn trên bản đồ để ghim vị trí.</p>", unsafe_allow_html=True)
                     if map_data and map_data.get("last_clicked"):
                         if st.button("Tạo đơn tại điểm vừa bấm"):
                             conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                             cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận')", (map_data['last_clicked']['lat'], map_data['last_clicked']['lng'], "Chờ xử lý", "admin"))
-                            conn.commit(); conn.close(); st.rerun()
+                            conn.commit(); conn.close()
+                            get_active_points.clear()
+                            st.rerun()
                 with t5:
                     st.markdown("<p style='font-size:14px; margin-bottom:10px; color:#8b949e;'>Tạo 5 đơn hàng ngẫu nhiên quanh kho.</p>", unsafe_allow_html=True)
                     if st.button("Tạo 5 đơn mẫu", type="primary", use_container_width=True):
@@ -253,7 +239,9 @@ if menu_selection == "Bản đồ Điều phối":
                             r_lat = base_lat + random.uniform(-0.015, 0.015)
                             r_lon = base_lon + random.uniform(-0.015, 0.015)
                             cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận')", (r_lat, r_lon, "Chờ xử lý", "admin"))
-                        conn.commit(); conn.close(); st.rerun()
+                        conn.commit(); conn.close()
+                        get_active_points.clear()
+                        st.rerun()
             
             if not active_points.empty:
                 st.markdown("<small>Chọn mã đơn cần hủy:</small>", unsafe_allow_html=True)
@@ -263,7 +251,9 @@ if menu_selection == "Bản đồ Điều phối":
                     if st.button("Có, xóa ngay!", type="primary", use_container_width=True):
                         conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                         cursor.execute("DELETE FROM LogisticsPoints WHERE point_id = ?", (int(target_del),))
-                        conn.commit(); conn.close(); st.rerun()
+                        conn.commit(); conn.close()
+                        get_active_points.clear()
+                        st.rerun()
             else: st.info("Không có đơn chờ.")
 
         st.divider()
@@ -280,21 +270,6 @@ if menu_selection == "Bản đồ Điều phối":
 # GIAO DIỆN 1.5: QUẢN LÝ ĐƠN HÀNG (TRANG DUYỆT ĐƠN)
 # ---------------------------------------------------------
 elif menu_selection == "Quản lý Đơn hàng":
-    try:
-        with open(r"D:\datn\img\19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png", "rb") as f:
-            logo_head_b64 = base64.b64encode(f.read()).decode()
-        logo_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 15px; z-index: 2; position: relative;">'
-    except: 
-        logo_html = '<i class="fa-solid fa-truck-fast" style="font-size: 35px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>'
-
-    st.markdown(f"""
-        <div style="display: flex; align-items: center; margin-bottom: 20px; z-index: 2; position: relative;">
-            {logo_html}
-            <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">QUẢN LÝ ĐƠN HÀNG</h1>
-        </div>
-    """, unsafe_allow_html=True)
-    st.divider()
-    
     if pending_orders > 0:
         st.markdown(f"""
             <div style="background-color: rgba(255, 204, 0, 0.15); border-left: 4px solid #ffcc00; padding: 12px 20px; border-radius: 5px; margin-bottom: 20px;">
@@ -328,11 +303,15 @@ elif menu_selection == "Quản lý Đơn hàng":
             if c_btn1.button("DUYỆT TẤT CẢ HOÀN THÀNH", type="primary", use_container_width=True):
                 conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                 cursor.execute("UPDATE LogisticsPoints SET status = N'Đã hoàn thành', delivery_status = N'Đã hoàn thành' WHERE delivery_status = N'Đang chờ duyệt'")
-                conn.commit(); conn.close(); st.success("Đã duyệt thành công!"); st.rerun()
+                conn.commit(); conn.close()
+                get_active_points.clear(); get_pending_orders.clear()
+                st.success("Đã duyệt thành công!"); st.rerun()
             if c_btn2.button("TỪ CHỐI TẤT CẢ", use_container_width=True):
                 conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                 cursor.execute("UPDATE LogisticsPoints SET delivery_status = N'Chờ xác nhận' WHERE delivery_status = N'Đang chờ duyệt'")
-                conn.commit(); conn.close(); st.rerun()
+                conn.commit(); conn.close()
+                get_active_points.clear(); get_pending_orders.clear()
+                st.rerun()
     else:
         st.info("Hiện không có đơn hàng nào đang chờ duyệt từ Tài xế.")
 
@@ -340,19 +319,7 @@ elif menu_selection == "Quản lý Đơn hàng":
 # GIAO DIỆN 2: QUẢN LÝ TÀI XẾ
 # ---------------------------------------------------------
 elif menu_selection == "Quản lý Tài xế":
-    try:
-        with open(r"D:\datn\img\19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png", "rb") as f:
-            logo_head_b64 = base64.b64encode(f.read()).decode()
-        logo_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 15px; z-index: 2; position: relative;">'
-    except: 
-        logo_html = '<i class="fa-solid fa-truck-fast" style="font-size: 35px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>'
-
-    st.markdown(f"""
-        <div style="display: flex; align-items: center; margin-bottom: 20px; z-index: 2; position: relative;">
-            {logo_html}
-            <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">QUẢN LÝ DANH SÁCH TÀI XẾ</h1>
-        </div>
-    """, unsafe_allow_html=True)
+    st.title("QUẢN LÝ DANH SÁCH TÀI XẾ")
     st.divider()
     if not df_users.empty:
         df_drivers = df_users[df_users['role'] == '2']
@@ -370,25 +337,14 @@ elif menu_selection == "Quản lý Tài xế":
                     new_lock_str = st.radio("Quyền truy cập:", ["Bình thường", "Bị khóa"], index=int(driver_info['is_locked']), horizontal=True)
                     if st.form_submit_button("Lưu thay đổi", use_container_width=True):
                         if update_user_info(target_driver, new_fn, 1 if new_lock_str == "Bị khóa" else 0):
+                            get_all_users.clear()
                             st.success("Đã cập nhật!"); st.rerun()
 
 # ---------------------------------------------------------
 # GIAO DIỆN 3: QUẢN LÝ KHÁCH HÀNG
 # ---------------------------------------------------------
 elif menu_selection == "Quản lý Khách hàng":
-    try:
-        with open(r"D:\datn\img\19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png", "rb") as f:
-            logo_head_b64 = base64.b64encode(f.read()).decode()
-        logo_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 15px; z-index: 2; position: relative;">'
-    except: 
-        logo_html = '<i class="fa-solid fa-truck-fast" style="font-size: 35px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>'
-
-    st.markdown(f"""
-        <div style="display: flex; align-items: center; margin-bottom: 20px; z-index: 2; position: relative;">
-            {logo_html}
-            <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">QUẢN LÝ DANH SÁCH KHÁCH HÀNG</h1>
-        </div>
-    """, unsafe_allow_html=True)
+    st.title("QUẢN LÝ DANH SÁCH KHÁCH HÀNG")
     st.divider()
     if not df_users.empty:
         df_customers = df_users[df_users['role'] == '3']
@@ -406,4 +362,5 @@ elif menu_selection == "Quản lý Khách hàng":
                     new_lock_str = st.radio("Quyền truy cập:", ["Bình thường", "Bị khóa"], index=int(customer_info['is_locked']), horizontal=True)
                     if st.form_submit_button("Lưu thay đổi", use_container_width=True):
                         if update_user_info(target_customer, new_fn, 1 if new_lock_str == "Bị khóa" else 0):
+                            get_all_users.clear()
                             st.success("Đã cập nhật!"); st.rerun()
