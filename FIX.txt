@@ -4,3 +4,4 @@ venv\Scripts\activate    kích hoạt mt
 ảo
 pip install -r requirements.txt   cài đặt thư viện vào mt ảo vừa cài
 streamlit run login.py chạy thử dự án
+LogisticsDB   tên database

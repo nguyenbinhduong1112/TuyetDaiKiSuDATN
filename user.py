@@ -8,13 +8,7 @@ import math
 from geopy.geocoders import Nominatim
 from datetime import datetime
 import pyodbc
-
-# ==========================================
-# CẤU HÌNH KẾT NỐI SQL SERVER
-# ==========================================
-SERVER_NAME = 'DESKTOP-U4FQD35' 
-DATABASE_NAME = 'LogisticsDB'
-CONN_STR = f"Driver={{SQL Server}};Server={SERVER_NAME};Database={DATABASE_NAME};Trusted_Connection=yes;"
+from config import CONN_STR
 
 geolocator = Nominatim(user_agent="umbrella_logistics_user")
 
@@ -235,6 +229,14 @@ elif menu_selection == "Lịch sử đơn hàng":
         st.divider()
 
         df_display = df_history.copy()
+        
+        # --- BỘ PHIÊN DỊCH TRẠNG THÁI DÀNH RIÊNG CHO KHÁCH HÀNG ---
+        df_display['status'] = df_display['status'].replace({
+            'Chờ Admin duyệt': 'Đang chờ Admin duyệt',
+            'Chờ xử lý': 'Đã duyệt - Đang điều phối xe',
+            'Đã hoàn thành': 'Giao hàng thành công'
+        })
+        
         df_display.rename(columns={'point_id': 'Mã Đơn', 'lat': 'Vĩ độ', 'lon': 'Kinh độ', 'status': 'Trạng thái Hệ thống', 'delivery_status': 'Trạng thái Giao hàng', 'created_at': 'Thời gian tạo'}, inplace=True)
         st.dataframe(df_display, use_container_width=True, hide_index=True)
     else: st.info("Bạn chưa tạo đơn hàng nào. Hãy sang mục 'Đặt đơn hàng' để bắt đầu nhé!")

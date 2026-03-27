@@ -1,22 +1,18 @@
 import streamlit as st
 import pyodbc
 import base64
+import os
+from config import CONN_STR
 
 # ==========================================
 # 1. CẤU HÌNH TAB TRÌNH DUYỆT (BẮT BUỘC ĐỂ ĐẦU TIÊN)
 # ==========================================
+page_icon_path = os.path.join("img", "4D5185D2-0AD7-49AC-B7B2-4E94C13DB13C.png")
 st.set_page_config(
     page_title="Đăng nhập - Umbrella Logistics", 
-    page_icon=r"D:\datn\img\4D5185D2-0AD7-49AC-B7B2-4E94C13DB13C.png",
+    page_icon=page_icon_path if os.path.exists(page_icon_path) else None,
     layout="wide"
 )
-
-# ==========================================
-# 2. CẤU HÌNH KẾT NỐI SQL SERVER
-# ==========================================
-SERVER_NAME = 'DESKTOP-U4FQD35' 
-DATABASE_NAME = 'LogisticsDB'
-CONN_STR = f"Driver={{SQL Server}};Server={SERVER_NAME};Database={DATABASE_NAME};Trusted_Connection=yes;"
 
 # --- PHỤC HỒI TRÍ NHỚ TỪ URL KHI F5 (BỔ SUNG MỚI) ---
 if "user" in st.query_params and "role" in st.query_params:
@@ -31,7 +27,7 @@ def get_base64_of_bin_file(bin_file):
         return base64.b64encode(data).decode()
     except Exception: return ""
 
-bg_img_b64 = get_base64_of_bin_file(r"D:\datn\img\E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png")
+bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
 
 # --- CSS DESIGN ---
 st.markdown(f"""
@@ -128,7 +124,7 @@ def login_page():
             with tab_signup:
                 new_user = st.text_input("", placeholder="Tên tài khoản mới", key="s_user")
                 new_pwd = st.text_input("", placeholder="Mật khẩu mới", type="password", key="s_pwd")
-                role_map = {"Tài xế": 2, "Người dùng": 3}
+                role_map = {"Tài xế": 2, "Khách hàng": 3}
                 choice = st.selectbox("Vai trò", list(role_map.keys()))
                 if st.button("Xác nhận đăng ký", type="primary"):
                     if new_user and new_pwd:
@@ -141,7 +137,7 @@ def login_page():
 page_login = st.Page(login_page, title="Đăng nhập")
 page_admin = st.Page("admin.py", title="Quản trị viên")
 page_driver = st.Page("app.py", title="Bản đồ AI Logistics")
-page_user = st.Page("user.py", title="Mua sắm trực tuyến")
+page_user = st.Page("user.py", title="Dịch vụ vận tải")
 
 if st.session_state.role is None: 
     pg = st.navigation([page_login])

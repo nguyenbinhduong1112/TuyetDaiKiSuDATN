@@ -13,13 +13,7 @@ import base64
 import math
 import random
 import pyodbc
-
-# ==========================================
-# CẤU HÌNH KẾT NỐI SQL SERVER
-# ==========================================
-SERVER_NAME = 'DESKTOP-U4FQD35' 
-DATABASE_NAME = 'LogisticsDB'
-CONN_STR = f"Driver={{SQL Server}};Server={SERVER_NAME};Database={DATABASE_NAME};Trusted_Connection=yes;"
+from config import CONN_STR
 
 def calculate_route_distance(locations, route_indices):
     if not route_indices or len(route_indices) < 2: return 0.0

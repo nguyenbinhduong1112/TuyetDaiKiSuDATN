@@ -8,13 +8,7 @@ import random
 from geopy.geocoders import Nominatim
 from datetime import datetime
 import os
-
-# ==========================================
-# CẤU HÌNH KẾT NỐI SQL SERVER
-# ==========================================
-SERVER_NAME = 'DESKTOP-U4FQD35'
-DATABASE_NAME = 'LogisticsDB'
-CONN_STR = f"Driver={{SQL Server}};Server={SERVER_NAME};Database={DATABASE_NAME};Trusted_Connection=yes;"
+from config import CONN_STR
 
 geolocator = Nominatim(user_agent="umbrella_logistics_admin")
 
