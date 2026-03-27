@@ -7,6 +7,7 @@ import base64
 import random
 from geopy.geocoders import Nominatim
 from datetime import datetime
+import os
 
 # ==========================================
 # CẤU HÌNH KẾT NỐI SQL SERVER
@@ -30,9 +31,9 @@ def get_base64_of_bin_file(bin_file):
             return base64.b64encode(f.read()).decode()
     except Exception: return ""
 
-# ĐỌC ẢNH LOGO VÀ BACKGROUND TỪ ĐẦU 
-bg_img_b64 = get_base64_of_bin_file(r"D:\datn\img\E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png")
-logo_head_b64 = get_base64_of_bin_file(r"D:\datn\img\19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png")
+# ĐỌC ẢNH LOGO VÀ BACKGROUND TỪ ĐẦU (ĐÃ SỬA THÀNH ĐƯỜNG DẪN TƯƠNG ĐỐI)
+bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
+logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png"))
 
 # --- 1. THIẾT LẬP GIAO DIỆN CHUNG ---
 st.set_page_config(layout="wide", page_title="Quản trị - UMBRELLA LOGISTICS")

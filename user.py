@@ -26,12 +26,13 @@ def get_base64_of_bin_file(bin_file):
             return base64.b64encode(f.read()).decode()
     except Exception: return ""
 
-# ĐỌC ẢNH LOGO VÀ BACKGROUND TỪ ĐẦU ĐỂ NHÚNG VÀO CSS
-bg_img_b64 = get_base64_of_bin_file(r"D:\datn\img\E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png")
-logo_head_b64 = get_base64_of_bin_file(r"D:\datn\img\19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png")
+# ĐỌC ẢNH LOGO VÀ BACKGROUND TỪ ĐẦU ĐỂ NHÚNG VÀO CSS (SỬ DỤNG ĐƯỜNG DẪN TƯƠNG ĐỐI)
+bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
+logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png"))
+page_icon_path = os.path.join("img", "4D5185D2-0AD7-49AC-B7B2-4E94C13DB13C.png")
 
 # --- 1. THIẾT LẬP GIAO DIỆN CHUNG ---
-st.set_page_config(layout="wide", page_title="Khách hàng - Umbrella Logistics", page_icon=r"D:\datn\img\4D5185D2-0AD7-49AC-B7B2-4E94C13DB13C.png")
+st.set_page_config(layout="wide", page_title="Khách hàng - Umbrella Logistics", page_icon=page_icon_path if os.path.exists(page_icon_path) else None)
 
 # CHÈN CSS ĐỒNG BỘ UI VÀ NHÚNG ICON VÀO NÚT LÀM MỚI BẰNG FONTAWESOME
 st.markdown(f"""
