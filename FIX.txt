@@ -1,33 +1,6 @@
-====================================================================
-BÍ KÍP CHẠY APP & FIX LỖI ĐỒ ÁN LOGISTICS AI - ĐẠI HỌC VINH
-====================================================================
 
---- PHẦN 1: QUY TRÌNH CHẠY APP MỖI NGÀY ---
-1. Mở Terminal trỏ về thư mục code: D:\datn>
-2. Bật môi trường ảo:  venv\Scripts\activate 
-   (LƯU Ý: Tuyệt đối KHÔNG gõ dấu "\" ở đầu tiên, phải gõ chữ 'venv' luôn)
-3. Chạy app:           streamlit run login.py
-
-
---- PHẦN 2: CÁCH "ĐẬP ĐI XÂY LẠI" VENV & CÀI FULL THƯ VIỆN ---
-Dùng khi môi trường ảo dở chứng (lỗi Cannot find path, hỏng thư viện...).
-Chỉ mất 30 giây, không cần ngồi dò lỗi:
-   1. Xóa venv cũ đi:    rmdir /s /q venv
-   2. Tạo venv mới tinh: python -m venv venv
-   3. Kích hoạt lại:     venv\Scripts\activate
-   4. NẠP FULL ĐẠN:      pip install streamlit torch numpy folium streamlit-folium osmnx scipy
-
-
---- PHẦN 3: TỔNG HỢP CÁC LỖI "ĐIÊN ĐIÊN" VÀ CÁCH CHỮA ---
-
-LỖI 1: ModuleNotFoundError hoặc ImportError (thiếu 'osmnx', 'scipy'...)
-- Nguyên nhân: Chưa bật venv hoặc cài thiếu thư viện bổ trợ.
-- Cách FIX: Đảm bảo đã bật venv (có chữ (venv) ở đầu dòng), rồi gõ lệnh:
-  pip install <tên-thư-viện-bị-thiếu>
-
-LỖI 2: The system cannot find the path specified (Khi gõ lệnh activate)
-- Nguyên nhân: Gõ thừa dấu gạch chéo \ ở đầu (VD: \venv\Scripts\activate). Máy sẽ hiểu lầm là tìm ở thư mục gốc ổ D.
-- Cách FIX: Xóa dấu gạch chéo đi, gõ chuẩn xác: venv\Scripts\activate
-
-
-====================================================================
+python -m venv venv   tạo môi trường ảo
+venv\Scripts\activate    kích hoạt mt 
+ảo
+pip install -r requirements.txt   cài đặt thư viện vào mt ảo vừa cài
+streamlit run login.py chạy thử dự án

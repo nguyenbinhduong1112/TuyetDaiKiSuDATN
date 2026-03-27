@@ -7,3 +7,5 @@ osmnx
 networkx
 pandas
 scipy
+pyodbc
+geopy
