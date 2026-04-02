@@ -291,13 +291,44 @@ elif menu_selection == "Quản lý Đơn hàng":
                 </span>
             </div>
         """, unsafe_allow_html=True)
-        if st.button("DUYỆT TẤT CẢ ĐƠN CỦA KHÁCH VÀO HỆ THỐNG", type="primary", use_container_width=True):
-            conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-            cursor.execute("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt'")
-            conn.commit(); conn.close()
-            st.cache_data.clear()
-            st.success("Đã duyệt thành công! Các đơn này đã xuất hiện trên bản đồ Tài xế.")
-            st.rerun()
+        
+        # --- Truy xuất tên khách hàng vừa tạo đơn ---
+        requesting_customer = "Khách hàng"
+        try:
+            conn_cust = pyodbc.connect(CONN_STR)
+            cust_df = pd.read_sql("SELECT TOP 1 created_by FROM LogisticsPoints WHERE status = N'Chờ Admin duyệt'", conn_cust)
+            if not cust_df.empty:
+                req_username = cust_df.iloc[0]['created_by']
+                name_df = pd.read_sql(f"SELECT ISNULL(fullname, username) as fullname FROM userstable WHERE username='{req_username}'", conn_cust)
+                if not name_df.empty:
+                    requesting_customer = name_df.iloc[0]['fullname']
+            conn_cust.close()
+        except: pass
+        request_time_user = datetime.now().strftime("%H:%M:%S - %d/%m/%Y")
+
+        with st.expander("Bấm vào đây để xem chi tiết & xử lý yêu cầu tạo đơn", expanded=True):
+            st.markdown(f"""
+                <div style="background-color: #21262d; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #1976D2;">
+                    <h4 style="margin-top: 0; color: white; margin-bottom: 10px;">Chi tiết yêu cầu tạo đơn</h4>
+                    <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-user" style="color: #1976D2; width: 25px;"></i> <b>Khách hàng yêu cầu:</b> <span style="color: white; font-weight: bold;">{requesting_customer}</span></p>
+                    <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-clock" style="color: #1976D2; width: 25px;"></i> <b>Thời gian hệ thống nhận:</b> <span style="color: white;">{request_time_user}</span></p>
+                    <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-box" style="color: #1976D2; width: 25px;"></i> <b>Số lượng đơn mới:</b> <span style="color: white;">{pending_user} đơn hàng</span></p>
+                </div>
+            """, unsafe_allow_html=True)
+
+            c_btn3, c_btn4 = st.columns(2)
+            if c_btn3.button("DUYỆT TẤT CẢ VÀO HỆ THỐNG", type="primary", use_container_width=True, key="app_all_user"):
+                conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
+                cursor.execute("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt'")
+                conn.commit(); conn.close()
+                st.cache_data.clear()
+                st.success("Đã duyệt thành công! Các đơn này đã xuất hiện trên bản đồ Tài xế.")
+                st.rerun()
+            if c_btn4.button("TỪ CHỐI TẤT CẢ", use_container_width=True, key="rej_all_user"):
+                conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
+                cursor.execute("UPDATE LogisticsPoints SET status = N'Từ chối' WHERE status = N'Chờ Admin duyệt'")
+                conn.commit(); conn.close()
+                st.cache_data.clear(); st.rerun()
         st.divider()
 
     # HIỂN THỊ YÊU CẦU TỪ TÀI XẾ (XIN HOÀN THÀNH)
@@ -320,10 +351,10 @@ elif menu_selection == "Quản lý Đơn hàng":
         except: pass
         request_time = datetime.now().strftime("%H:%M:%S - %d/%m/%Y")
 
-        with st.expander("Bấm vào đây để xem chi tiết & xử lý yêu cầu", expanded=True):
+        with st.expander("Bấm vào đây để xem chi tiết & xử lý yêu cầu hoàn thành", expanded=True):
             st.markdown(f"""
                 <div style="background-color: #21262d; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #FF4B4B;">
-                    <h4 style="margin-top: 0; color: white; margin-bottom: 10px;">Chi tiết yêu cầu</h4>
+                    <h4 style="margin-top: 0; color: white; margin-bottom: 10px;">Chi tiết yêu cầu hoàn thành</h4>
                     <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-user-tie" style="color: #FF4B4B; width: 25px;"></i> <b>Tài xế yêu cầu:</b> <span style="color: white; font-weight: bold;">{requesting_driver}</span></p>
                     <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-clock" style="color: #FF4B4B; width: 25px;"></i> <b>Thời gian xác nhận:</b> <span style="color: white;">{request_time}</span></p>
                     <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-box-open" style="color: #FF4B4B; width: 25px;"></i> <b>Số lượng đơn:</b> <span style="color: white;">{pending_driver} đơn hàng</span></p>
