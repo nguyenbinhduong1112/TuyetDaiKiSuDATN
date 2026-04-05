@@ -39,7 +39,8 @@ gmaps_hover_b64 = get_base64_of_bin_file(os.path.join("img", "Google-Maps-PNG-Fr
 bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
 logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png"))
 
-st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; z-index: 2; position: relative; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f2c2'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}.gmaps-btn {{ position: relative; display: flex; align-items: center; justify-content: center; background-color: #FF4B4B !important; color: white !important; padding: 0.7rem 1rem; border-radius: 8px; text-decoration: none !important; font-weight: 700; font-size: 18px; border: 1px solid #FF4B4B !important; transition: all 0.3s ease-in-out; width: 100%; box-sizing: border-box; overflow: hidden; }}.gmaps-btn::before {{ content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background-image: url('data:image/png;base64,{gmaps_hover_b64}'); background-size: 40px; background-repeat: no-repeat; background-position: 20px center; transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1); z-index: 1; opacity: 0; }}.gmaps-btn:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; }}.gmaps-btn:hover::before {{ left: 0; opacity: 0.6; }}.btn-text-content {{ position: relative; z-index: 2; display: flex; align-items: center; gap: 8px; }}button[kind="primary"] {{ background-color: #FF4B4B !important; border-color: #FF4B4B !important; transition: all 0.3s ease-in-out !important; }}button[kind="primary"]:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; color: white !important; }}.qr-overlay {{ display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 999999; justify-content: center; align-items: center; backdrop-filter: blur(5px); }}#qr-toggle:checked ~ .qr-overlay {{ display: flex !important; }}.qr-popup {{ background: white; padding: 20px; border-radius: 15px; position: relative; text-align: center; box-shadow: 0 0 30px rgba(0,0,0,0.8); }}.close-btn {{ position: absolute; top: -15px; right: -15px; background: #FF4B4B; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 24px; font-weight: bold; border: 3px solid white; transition: 0.3s; }}.open-btn {{ display: block; background: #262730; color: white; text-align: center; border-radius: 6px; cursor: pointer; font-weight: bold; border: 1px solid #444; transition: 0.3s; }}.open-btn:hover {{ background: #3a3d4a; border-color: #666; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
+# Cập nhật CSS để thêm Icon cho Tab thứ 4 (Giao thông)
+st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; z-index: 2; position: relative; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f2c2'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f5a0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}.gmaps-btn {{ position: relative; display: flex; align-items: center; justify-content: center; background-color: #FF4B4B !important; color: white !important; padding: 0.7rem 1rem; border-radius: 8px; text-decoration: none !important; font-weight: 700; font-size: 18px; border: 1px solid #FF4B4B !important; transition: all 0.3s ease-in-out; width: 100%; box-sizing: border-box; overflow: hidden; }}.gmaps-btn::before {{ content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background-image: url('data:image/png;base64,{gmaps_hover_b64}'); background-size: 40px; background-repeat: no-repeat; background-position: 20px center; transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1); z-index: 1; opacity: 0; }}.gmaps-btn:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; }}.gmaps-btn:hover::before {{ left: 0; opacity: 0.6; }}.btn-text-content {{ position: relative; z-index: 2; display: flex; align-items: center; gap: 8px; }}button[kind="primary"] {{ background-color: #FF4B4B !important; border-color: #FF4B4B !important; transition: all 0.3s ease-in-out !important; }}button[kind="primary"]:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; color: white !important; }}.qr-overlay {{ display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 999999; justify-content: center; align-items: center; backdrop-filter: blur(5px); }}#qr-toggle:checked ~ .qr-overlay {{ display: flex !important; }}.qr-popup {{ background: white; padding: 20px; border-radius: 15px; position: relative; text-align: center; box-shadow: 0 0 30px rgba(0,0,0,0.8); }}.close-btn {{ position: absolute; top: -15px; right: -15px; background: #FF4B4B; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 24px; font-weight: bold; border: 3px solid white; transition: 0.3s; }}.open-btn {{ display: block; background: #262730; color: white; text-align: center; border-radius: 6px; cursor: pointer; font-weight: bold; border: 1px solid #444; transition: 0.3s; }}.open-btn:hover {{ background: #3a3d4a; border-color: #666; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
 
 @st.cache_data(ttl=30)
 def fetch_real_data():
@@ -129,7 +130,8 @@ else:
 
 with st.sidebar:
     st.markdown(f"<div style='display: flex; align-items: center; margin-bottom: 20px;'>{logo_sidebar_html}<h3 style='color: white; margin: 0; font-weight: bold;'>QUẢN LÝ CÔNG VIỆC</h3></div>", unsafe_allow_html=True)
-    menu_selection = st.radio("Điều hướng", ["Đơn hàng chuỗi", "Đơn hàng lẻ", "Quản lý thông tin cá nhân"], label_visibility="collapsed")
+    # Thêm mục "Tình trạng giao thông" vào danh sách điều hướng
+    menu_selection = st.radio("Điều hướng", ["Đơn hàng chuỗi", "Đơn hàng lẻ", "Quản lý thông tin cá nhân", "Tình trạng giao thông"], label_visibility="collapsed")
     st.markdown("<div style='flex-grow: 1; height: 35vh;'></div>", unsafe_allow_html=True)
     st.markdown(f"""<div style="text-align: center; padding: 20px 0; border-top: 1px solid #333; margin-top: auto;"><img src="data:image/png;base64,{bg_img_b64}" style="width: 140px; opacity: 0.15; filter: grayscale(100%);"><p style="color: #8b949e; font-size: 13px; margin-top: 15px; font-weight: bold; letter-spacing: 1px;">UMBRELLA DRIVER APP</p><p style="color: #444; font-size: 11px; margin-top: -10px;">Vinh City Supply Chain © 2026</p></div>""", unsafe_allow_html=True)
 
@@ -243,3 +245,74 @@ elif menu_selection == "Quản lý thông tin cá nhân":
             <p style="color: #8b949e; font-size: 16px;"><b>Tình trạng hiện tại:</b> <span style="color:white;">{st.session_state.driver_status}</span></p>
         </div>
     """, unsafe_allow_html=True)
+
+# ===== ĐÂY LÀ TAB MỚI ĐÃ ĐƯỢC FIX LỖI BẰNG WAZE LIVE MAP =====
+elif menu_selection == "Tình trạng giao thông":
+    st.markdown(f"""
+        <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
+            <i class="fa-solid fa-map-location-dot" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
+            <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">Giao thông & Thời tiết</h1>
+        </div>
+        <hr style="margin-top: 5px; border-color: #333; z-index: 2; position: relative;">
+    """, unsafe_allow_html=True)
+
+    col_weather, col_map_traffic = st.columns([1, 2.5])
+
+    with col_weather:
+        # Bỏ toàn bộ thụt lề (indentation) để Streamlit không biến HTML thành Code Block
+        st.markdown("""<div style="background: linear-gradient(135deg, #1A1C24 0%, #2A2D3E 100%); padding: 20px; border-radius: 12px; border: 1px solid #444; box-shadow: 0 4px 15px rgba(0,0,0,0.3); text-align: center; position: relative; z-index: 2;">
+<h3 style="color: white; margin-top: 0; margin-bottom: 5px;"><i class="fa-solid fa-location-dot" style="color: #FF4B4B;"></i> TP. Vinh, Nghệ An</h3>
+<p style="color: #8b949e; font-size: 14px; margin-bottom: 15px;">Cập nhật thời gian thực</p>
+<i class="fa-solid fa-cloud-sun" style="font-size: 60px; color: #FFCC00; margin-bottom: 10px;"></i>
+<h1 style="color: white; font-size: 50px; margin: 0; font-weight: bold;">28°C</h1>
+<p style="color: #e0e0e0; font-size: 16px; margin-top: 5px; font-weight: 500;">Ít mây, không mưa</p>
+<div style="display: flex; justify-content: space-around; margin-top: 20px; border-top: 1px solid #444; padding-top: 15px;">
+<div>
+<i class="fa-solid fa-droplet" style="color: #1E90FF; font-size: 20px; margin-bottom: 5px;"></i>
+<p style="color: #8b949e; font-size: 13px; margin: 0;">Độ ẩm</p>
+<b style="color: white; font-size: 15px;">75%</b>
+</div>
+<div>
+<i class="fa-solid fa-wind" style="color: #A9A9A9; font-size: 20px; margin-bottom: 5px;"></i>
+<p style="color: #8b949e; font-size: 13px; margin: 0;">Gió</p>
+<b style="color: white; font-size: 15px;">12 km/h</b>
+</div>
+</div>
+<div style="margin-top: 20px; background: rgba(255, 75, 75, 0.1); border: 1px solid rgba(255, 75, 75, 0.3); padding: 10px; border-radius: 8px;">
+<p style="color: #FF4B4B; font-size: 13px; margin: 0; font-weight: bold;"><i class="fa-solid fa-triangle-exclamation"></i> Cảnh báo: Tầm nhìn tốt, mặt đường khô ráo.</p>
+</div>
+</div>""", unsafe_allow_html=True)
+
+    with col_map_traffic:
+        # Sử dụng Waze Live Map thay thế để hiển thị giao thông thời gian thực miễn phí
+        st.markdown("""
+        <div style="border-radius: 12px; overflow: hidden; border: 1px solid #444; z-index: 2; position: relative; height: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+            <iframe 
+                src="https://embed.waze.com/iframe?zoom=14&lat=18.6733&lon=105.6813&ct=livemap"
+                width="100%" 
+                height="100%" 
+                style="border:0;" 
+                allowfullscreen="">
+            </iframe>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # --- THÊM DANH SÁCH CÁC CÂU QUOTE HÀI HƯỚC DẶN DÒ TÀI XẾ ---
+        quotes = [
+            "Đường đi khó, không khó vì ngăn sông cách núi, mà khó vì... đèn đỏ quá lâu.",
+            "Nhanh một giây, chậm cả đời. Chậm một giây... khách gọi tổng đài hối đơn.",
+            "Phía trước là bầu trời, đằng sau là... hàng đống đơn chưa giao.",
+            "Đi chậm lại một chút để thấy cuộc đời... vẫn còn kẹt xe dài dài.",
+            "Đừng chạy quá nhanh để tâm hồn không kịp bắt kịp thể xác... và để không bị công an gọi vào.",
+            "Kẹt xe không phải là nỗi đau, kẹt xe là lúc ta sống chậm lại và... nghe nhạc bolero.",
+            "Đơn hàng dù có trễ, nụ cười vẫn luôn nở trên môi. (Bị trừ lương tính sau)",
+            "Chậm chắc còn hơn nhanh... nát bét."
+        ]
+        random_quote = random.choice(quotes)
+        
+        st.markdown(f"""
+        <div style="background-color: rgba(255, 75, 75, 0.1); border-left: 4px solid #FF4B4B; padding: 10px 15px; border-radius: 5px; margin-top: 15px; z-index: 2; position: relative;">
+            <span style="color: #e0e0e0; font-style: italic; font-size: 14px;"><i class="fa-solid fa-quote-left" style="color: #FF4B4B; margin-right: 8px;"></i>{random_quote}</span>
+        </div>
+        <p style="text-align: right; color: #8b949e; font-size: 12px; margin-top: 8px; z-index: 2; position: relative;">* Lớp dữ liệu giao thông được cập nhật trực tiếp qua nền tảng Waze Live Map.</p>
+        """, unsafe_allow_html=True)

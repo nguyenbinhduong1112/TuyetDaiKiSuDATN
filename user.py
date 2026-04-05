@@ -12,6 +12,14 @@ from config import CONN_STR
 
 geolocator = Nominatim(user_agent="umbrella_logistics_user")
 
+# --- HÀM TÍNH KHOẢNG CÁCH (HAVERSINE) ĐỂ TÍNH TIỀN SHIP ---
+def calculate_distance_km(lat1, lon1, lat2, lon2):
+    R = 6371.0 # Bán kính Trái Đất (km)
+    dlat, dlon = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
+
 # --- TỐI ƯU HIỆU NĂNG: CACHE ẢNH VÀO RAM ---
 @st.cache_data
 def get_base64_of_bin_file(bin_file):
@@ -106,8 +114,11 @@ def get_user_history_orders(username):
 user_fullname = get_user_fullname(st.session_state.username)
 wh_loc = get_warehouse_loc()
 
+# KHỞI TẠO CÁC BIẾN STATE
 if 'temp_lat' not in st.session_state: st.session_state.temp_lat = None
 if 'temp_lon' not in st.session_state: st.session_state.temp_lon = None
+if 'show_payment' not in st.session_state: st.session_state.show_payment = False
+if 'last_created_id' not in st.session_state: st.session_state.last_created_id = None # Biến lưu mã ID vừa tạo
 
 # Header Profile
 col_space, col_user = st.columns([8.5, 1.5])
@@ -119,7 +130,7 @@ with col_user:
             st.session_state.role = None; st.session_state.username = None; st.query_params.clear(); st.rerun()
 
 # ==========================================
-# SIDEBAR MENU (CHỈ DÙNG LOGO TRƯỚC CHỮ UMBRELLA APP)
+# SIDEBAR MENU
 # ==========================================
 if logo_head_b64:
     logo_sidebar_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
@@ -141,10 +152,9 @@ with st.sidebar:
 st.markdown("<div style='margin-top:-50px;'></div>", unsafe_allow_html=True)
 
 # ==========================================
-# GIAO DIỆN 1: ĐẶT ĐƠN HÀNG 
+# GIAO DIỆN 1: ĐẶT ĐƠN HÀNG VÀ THANH TOÁN
 # ==========================================
 if menu_selection == "Đặt đơn hàng":
-    # Gọi thẳng icon FontAwesome (fa-cart-shopping) thay vì load ảnh tĩnh
     st.markdown(f"""
         <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
             <i class="fa-solid fa-cart-shopping" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
@@ -156,62 +166,156 @@ if menu_selection == "Đặt đơn hàng":
     col_map, col_form = st.columns([3, 1])
     
     with col_form:
-        st.markdown("### Chọn vị trí nhận/giao", unsafe_allow_html=True)
-        st.markdown("""<div style="background-color: rgba(25, 118, 210, 0.15); border-left: 4px solid #1976D2; padding: 12px 15px; border-radius: 5px; margin-bottom: 15px;"><span style="color: #1976D2; font-weight: bold; font-size: 14px;">Nhập địa chỉ bên dưới hoặc <b>bấm trực tiếp lên bản đồ</b>. Đơn sau khi tạo sẽ được gửi cho Quản trị viên duyệt.</span></div>""", unsafe_allow_html=True)
-        
-        addr_input = st.text_input("Nhập địa chỉ (TP Vinh, Nghệ An):")
-        if st.button("TÌM KIẾM VỊ TRÍ", use_container_width=True):
-            with st.spinner("Đang tìm vị trí..."):
-                loc = geolocator.geocode(addr_input)
-                if loc:
-                    st.session_state.temp_lat = loc.latitude; st.session_state.temp_lon = loc.longitude
-                    st.success("Đã ghim vị trí trên bản đồ!")
-                else: st.error("Không tìm thấy địa chỉ!")
-
-        st.write("---")
-        if st.session_state.temp_lat and st.session_state.temp_lon:
-            st.markdown(f"""<div style="padding: 10px; border: 1px solid #FF4B4B; border-radius: 8px; margin-bottom: 15px; background: rgba(255, 75, 75, 0.1);"><b style="color:white;">Vị trí đã chọn:</b><br><code style="color:#FF4B4B; background:transparent;">Vĩ độ: {st.session_state.temp_lat:.5f}</code><br><code style="color:#FF4B4B; background:transparent;">Kinh độ: {st.session_state.temp_lon:.5f}</code></div>""", unsafe_allow_html=True)
+        # Nếu vừa tạo đơn thành công, hiện thông báo này và ẩn form nhập liệu
+        if st.session_state.last_created_id:
+            st.markdown(f"""
+            <div style="padding: 20px; border-radius: 10px; background-color: rgba(40, 167, 69, 0.15); border: 1px solid #28a745; text-align: center; margin-bottom: 15px;">
+                <i class="fa-solid fa-circle-check" style="font-size: 40px; color: #28a745; margin-bottom: 10px;"></i>
+                <h3 style="color: #28a745; margin: 0;">THANH TOÁN THÀNH CÔNG!</h3>
+                <p style="color: white; font-size: 16px; margin-top: 10px;">Mã đơn hàng của bạn là: <b style="font-size: 20px; color: #FF4B4B;">#{st.session_state.last_created_id}</b></p>
+                <p style="color: #8b949e; font-size: 13px;">Đơn hàng đã được hiển thị trên bản đồ (Ghim màu cam) và đang chờ Admin điều phối xe.</p>
+            </div>
+            """, unsafe_allow_html=True)
             
-            if st.button("GỬI YÊU CẦU TẠO ĐƠN", type="primary", use_container_width=True):
-                with st.spinner("Đang gửi yêu cầu cho Admin..."):
-                    try:
-                        conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                        cursor.execute("""
-                            INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status) 
-                            VALUES (?, ?, N'Chờ Admin duyệt', ?, GETDATE(), N'Chờ xếp xe')
-                        """, (st.session_state.temp_lat, st.session_state.temp_lon, st.session_state.username))
-                        conn.commit(); conn.close()
-                        st.session_state.temp_lat = None; st.session_state.temp_lon = None
-                        st.cache_data.clear()
-                        st.success("GỬI ĐƠN THÀNH CÔNG! ĐANG CHỜ ADMIN DUYỆT ĐỂ XẾP XE.")
-                    except Exception as e: st.error(f"Có lỗi xảy ra: {e}")
+            if st.button("Tạo đơn vận chuyển mới", use_container_width=True, type="primary"):
+                st.session_state.last_created_id = None
+                st.rerun()
+        
+        # Form nhập liệu bình thường (khi chưa tạo đơn)
         else:
-            st.button("GỬI YÊU CẦU TẠO ĐƠN", disabled=True, use_container_width=True)
+            st.markdown("### Chọn vị trí nhận/giao", unsafe_allow_html=True)
+            st.markdown("""<div style="background-color: rgba(25, 118, 210, 0.15); border-left: 4px solid #1976D2; padding: 12px 15px; border-radius: 5px; margin-bottom: 15px;"><span style="color: #1976D2; font-weight: bold; font-size: 14px;">Nhập địa chỉ bên dưới hoặc <b>bấm trực tiếp lên bản đồ</b>. Đơn sau khi tạo sẽ được gửi cho Quản trị viên duyệt.</span></div>""", unsafe_allow_html=True)
+            
+            addr_input = st.text_input("Nhập địa chỉ (TP Vinh, Nghệ An):")
+            if st.button("TÌM KIẾM VỊ TRÍ", use_container_width=True):
+                with st.spinner("Đang tìm vị trí..."):
+                    loc = geolocator.geocode(addr_input)
+                    if loc:
+                        st.session_state.temp_lat = loc.latitude; st.session_state.temp_lon = loc.longitude
+                        st.session_state.show_payment = False 
+                        st.success("Đã ghim vị trí trên bản đồ!")
+                    else: st.error("Không tìm thấy địa chỉ!")
 
+            st.write("---")
+            
+            # KHI ĐÃ CÓ VỊ TRÍ TRÊN BẢN ĐỒ
+            if st.session_state.temp_lat and st.session_state.temp_lon:
+                # Tính toán khoảng cách và cước phí (6,000đ/km, tối thiểu 15,000đ)
+                distance_km = calculate_distance_km(wh_loc[0], wh_loc[1], st.session_state.temp_lat, st.session_state.temp_lon)
+                shipping_fee = max(15000, int(distance_km * 6000))
+                
+                st.markdown(f"""
+                <div style="padding: 15px; border: 1px solid #333; border-radius: 8px; margin-bottom: 15px; background: #1A1C24;">
+                    <h4 style="color:white; margin-top:0;"><i class="fa-solid fa-file-invoice" style="color:#FF4B4B;"></i> Chi tiết đơn hàng</h4>
+                    <div style="display:flex; justify-content: space-between; margin-bottom:5px;">
+                        <span style="color:#8b949e;">Khoảng cách:</span>
+                        <b style="color:white;">{distance_km:.1f} km</b>
+                    </div>
+                    <div style="display:flex; justify-content: space-between; border-bottom: 1px solid #444; padding-bottom: 10px; margin-bottom:10px;">
+                        <span style="color:#8b949e;">Tọa độ giao:</span>
+                        <span style="color:white; font-size:13px;">{st.session_state.temp_lat:.4f}, {st.session_state.temp_lon:.4f}</span>
+                    </div>
+                    <div style="display:flex; justify-content: space-between; align-items:center;">
+                        <span style="color:#8b949e; font-size: 16px;"><b>Tổng thanh toán:</b></span>
+                        <b style="color:#FF4B4B; font-size: 22px;">{shipping_fee:,} VNĐ</b>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # LUỒNG THANH TOÁN
+                if not st.session_state.show_payment:
+                    if st.button("TIẾN HÀNH THANH TOÁN", type="primary", use_container_width=True):
+                        st.session_state.show_payment = True
+                        st.rerun()
+                else:
+                    # HIỂN THỊ MÃ QR CODE 
+                    bank_id = "MB"
+                    account_no = "0987654321" 
+                    account_name = "UMBRELLA LOGISTICS"
+                    description = f"Thanh toan don hang {st.session_state.username}"
+                    qr_url = f"https://img.vietqr.io/image/{bank_id}-{account_no}-compact2.png?amount={shipping_fee}&addInfo={description}&accountName={account_name}"
+                    
+                    st.markdown(f"""
+                    <div style="text-align:center; padding: 15px; border: 2px dashed #28a745; border-radius: 8px; margin-bottom: 15px; background: rgba(40, 167, 69, 0.05);">
+                        <b style="color:#28a745;"><i class="fa-solid fa-qrcode"></i> Quét mã để thanh toán</b><br>
+                        <img src="{qr_url}" style="width:200px; border-radius:10px; margin: 10px 0;">
+                        <p style="color:#8b949e; font-size:13px; margin:0;">Hệ thống sẽ tự động xác nhận sau khi nhận được chuyển khoản.</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    if st.button("ĐÃ CHUYỂN KHOẢN - TẠO ĐƠN", type="primary", use_container_width=True):
+                        with st.spinner("Đang xác thực và gửi yêu cầu..."):
+                            try:
+                                conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
+                                # DÙNG OUTPUT INSERTED ĐỂ LẤY LẠI ID ĐƠN VỪA TẠO
+                                cursor.execute("""
+                                    INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status) 
+                                    OUTPUT INSERTED.point_id
+                                    VALUES (?, ?, N'Chờ Admin duyệt', ?, GETDATE(), N'Chờ xếp xe')
+                                """, (st.session_state.temp_lat, st.session_state.temp_lon, st.session_state.username))
+                                new_id = cursor.fetchone()[0]
+                                conn.commit(); conn.close()
+                                
+                                # Xóa dữ liệu rác để chuẩn bị giao diện mới
+                                st.session_state.temp_lat = None; st.session_state.temp_lon = None
+                                st.session_state.show_payment = False
+                                st.session_state.last_created_id = new_id # Lưu ID để hiện thông báo
+                                
+                                get_user_history_orders.clear() # Xóa cache để bản đồ tải ngay đơn mới
+                                st.rerun() # ÉP LÀM MỚI TRANG ĐỂ XÓA MÃ QR NGAY LẬP TỨC
+                            except Exception as e: st.error(f"Có lỗi xảy ra: {e}")
+                    
+                    if st.button("Hủy thanh toán", use_container_width=True):
+                        st.session_state.show_payment = False
+                        st.rerun()
+
+    # KHU VỰC BẢN ĐỒ
     with col_map:
         center_loc = [st.session_state.temp_lat, st.session_state.temp_lon] if st.session_state.temp_lat else wh_loc
         m_user = folium.Map(location=center_loc, zoom_start=14, tiles="cartodbpositron")
+        
+        # 1. Vẽ điểm Kho gốc
         folium.Marker(location=wh_loc, icon=folium.DivIcon(html=f'<div style="color:white; background:#555; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 11px;">KHO</div>')).add_to(m_user)
         
+        # 2. VẼ CÁC ĐƠN HÀNG ĐANG HOẠT ĐỘNG CỦA KHÁCH HÀNG LÊN BẢN ĐỒ
+        df_active = get_user_history_orders(st.session_state.username)
+        if not df_active.empty:
+            df_active = df_active[df_active['status'] != 'Đã hoàn thành']
+            for _, row in df_active.iterrows():
+                # Nếu đơn đang chờ duyệt -> Màu cam, Nếu đã duyệt/đang đi -> Màu xanh lá
+                status_color = "#FFA500" if row['status'] == 'Chờ Admin duyệt' else "#28a745"
+                status_label = "CHỜ" if row['status'] == 'Chờ Admin duyệt' else "ĐI"
+                
+                folium.Marker(
+                    location=[row['lat'], row['lon']],
+                    icon=folium.DivIcon(html=f'<div style="color:white; background:{status_color}; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 10px;">{status_label}</div>'),
+                    tooltip=f"Đơn #{row['point_id']} - {row['status']}"
+                ).add_to(m_user)
+
+        # 3. Vẽ điểm đang chọn (GIAO/MỚI)
         if st.session_state.temp_lat and st.session_state.temp_lon:
             folium.Marker(
                 location=[st.session_state.temp_lat, st.session_state.temp_lon], 
                 icon=folium.DivIcon(html=f'<div style="color:white; background:#1976D2; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 11px;">MỚI</div>'),
                 tooltip="Vị trí bạn muốn giao/nhận"
             ).add_to(m_user)
+            folium.PolyLine(locations=[wh_loc, [st.session_state.temp_lat, st.session_state.temp_lon]], color="#1976D2", weight=3, dash_array="5, 10").add_to(m_user)
 
         map_data = st_folium(m_user, width="100%", height=550, key="user_create_order_map", returned_objects=["last_clicked"])
+        
+        # Lắng nghe sự kiện click trên bản đồ
         if map_data and map_data.get("last_clicked"):
             lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
             if lat != st.session_state.temp_lat or lon != st.session_state.temp_lon:
                 st.session_state.temp_lat = lat; st.session_state.temp_lon = lon
+                st.session_state.show_payment = False # Đổi điểm thì phải reset thanh toán
+                st.session_state.last_created_id = None # Tắt bảng thành công đi để tạo đơn mới
                 st.rerun()
 
 # ==========================================
 # GIAO DIỆN 2: LỊCH SỬ ĐƠN HÀNG 
 # ==========================================
 elif menu_selection == "Lịch sử đơn hàng":
-    # Dùng FontAwesome (fa-boxes-stacked) 
     st.markdown(f"""
         <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
             <i class="fa-solid fa-boxes-stacked" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
@@ -230,9 +334,8 @@ elif menu_selection == "Lịch sử đơn hàng":
 
         df_display = df_history.copy()
         
-        # --- BỘ PHIÊN DỊCH TRẠNG THÁI DÀNH RIÊNG CHO KHÁCH HÀNG ---
         df_display['status'] = df_display['status'].replace({
-            'Chờ Admin duyệt': 'Đang chờ Admin duyệt',
+            'Chờ Admin duyệt': 'Đã Thanh Toán - Chờ Duyệt',
             'Chờ xử lý': 'Đã duyệt - Đang điều phối xe',
             'Đã hoàn thành': 'Giao hàng thành công'
         })
@@ -245,7 +348,6 @@ elif menu_selection == "Lịch sử đơn hàng":
 # GIAO DIỆN 3: QUẢN LÝ THÔNG TIN CÁ NHÂN 
 # ==========================================
 elif menu_selection == "Quản lý thông tin cá nhân":
-    # Dùng FontAwesome (fa-id-badge)
     st.markdown(f"""
         <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
             <i class="fa-solid fa-id-badge" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
