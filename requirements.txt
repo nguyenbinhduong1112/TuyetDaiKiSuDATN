@@ -9,3 +9,4 @@ pandas
 scipy
 pyodbc
 geopy
+PyJWT

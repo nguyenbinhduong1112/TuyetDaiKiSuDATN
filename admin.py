@@ -34,7 +34,7 @@ def get_warehouse_loc():
 def get_active_points():
     try:
         conn = pyodbc.connect(CONN_STR)
-        df = pd.read_sql("SELECT point_id, lat, lon, customer_name, ISNULL(created_by, 'admin') as created_by, ISNULL(created_at, GETDATE()) as created_at FROM LogisticsPoints WHERE status = N'Chờ xử lý'", conn)
+        df = pd.read_sql("SELECT point_id, lat, lon, customer_name, ISNULL(created_by, 'admin') as created_by, ISNULL(created_at, GETDATE()) as created_at FROM LogisticsPoints WHERE status = N'Chờ xử lý' AND ISNULL(order_type, '') != N'lẻ'", conn)
         conn.close()
         return df
     except: return pd.DataFrame()
@@ -54,58 +54,45 @@ def get_all_users():
 def get_pending_orders():
     try:
         conn = pyodbc.connect(CONN_STR)
-        c_driver = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE delivery_status = N'Đang chờ duyệt'", conn).iloc[0,0]
-        c_user = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE status = N'Chờ Admin duyệt'", conn).iloc[0,0]
+        c_driver = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE delivery_status = N'Đang chờ duyệt' AND ISNULL(order_type, '') != N'lẻ'", conn).iloc[0,0]
+        c_user = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'", conn).iloc[0,0]
+        
+        c_cod_driver = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE delivery_status = N'Đang chờ duyệt' AND order_type = N'lẻ'", conn).iloc[0,0]
+        c_cod_user = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE status = N'Chờ Admin duyệt' AND order_type = N'lẻ'", conn).iloc[0,0]
+        
         conn.close()
-        return c_driver, c_user
-    except: return 0, 0
-
-def update_user_info(username, new_fullname, is_locked):
-    try:
-        conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-        cursor.execute("UPDATE userstable SET fullname = ?, is_locked = ? WHERE username = ?", (new_fullname, is_locked, username))
-        conn.commit(); conn.close()
-        return True
-    except: return False
+        return c_driver, c_user, c_cod_driver, c_cod_user
+    except: return 0, 0, 0, 0
 
 # ==========================================
 # HÀM RENDER ĐƯỢC GỌI TỪ MAIN.PY
 # ==========================================
 def render_page():
-    # --- PHỤC HỒI TRÍ NHỚ TỪ URL KHI F5 ---
-    # [CẬP NHẬT 1]: Đổi 'user' thành 'customer' ở cả query_params và session_state
-    if "customer" in st.query_params and "role" in st.query_params:
-        st.session_state.customer = st.query_params["customer"]
-        st.session_state.role = st.query_params["role"]
-
-    # KIỂM TRA BẢO MẬT
-    # [CẬP NHẬT 2]: Đổi 'username' thành 'customer' để xác thực
     if "customer" not in st.session_state or str(st.session_state.get("role", "")) != "1":
         st.warning("Vui lòng đăng nhập bằng tài khoản Quản trị viên!")
         st.stop()
 
-    # ĐỌC ẢNH LOGO VÀ BACKGROUND
     bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
     logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png"))
 
-    # NHÚNG THƯ VIỆN FONTAWESOME 6 VÀ CSS NÉN
-    st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; }}.stDataFrame {{ border-radius: 8px; border: 1px solid #333; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f279'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f4fc'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f0c0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}div[data-testid="stPopover"] > button {{ background-color: #1A1C24 !important; color: white !important; border: 1px solid #333 !important; opacity: 1 !important; }}div[data-testid="stPopover"] > button:hover {{ background-color: #21262d !important; border-color: #FF4B4B !important; }}[data-testid="stSidebar"] .stButton > button {{ border-radius: 8px; font-weight: 700; text-transform: uppercase; font-size: 14px; letter-spacing: 1px; transition: all 0.2s; }}[data-testid="stSidebar"] .stButton > button p::before {{ content: '\\f2f9'; font-family: 'Font Awesome 6 Free'; font-weight: 900; margin-right: 8px; font-size: 16px; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; }}.stDataFrame {{ border-radius: 8px; border: 1px solid #333; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f279'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f0e7'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f1da'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(5) p::before {{ content: '\\f0c0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}div[data-testid="stPopover"] > button {{ background-color: #1A1C24 !important; color: white !important; border: 1px solid #333 !important; opacity: 1 !important; }}div[data-testid="stPopover"] > button:hover {{ background-color: #21262d !important; border-color: #FF4B4B !important; }}[data-testid="stSidebar"] .stButton > button {{ border-radius: 8px; font-weight: 700; text-transform: uppercase; font-size: 14px; letter-spacing: 1px; transition: all 0.2s; }}[data-testid="stSidebar"] .stButton > button p::before {{ content: '\\f2f9'; font-family: 'Font Awesome 6 Free'; font-weight: 900; margin-right: 8px; font-size: 16px; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
 
-    # LẤY DỮ LIỆU TỪ CACHE
-    pending_driver, pending_user = get_pending_orders()
-    pending_orders = pending_driver + pending_user
+    pending_driver, pending_user, pending_cod_driver, pending_cod_user = get_pending_orders()
+    pending_standard = pending_driver + pending_user
+    pending_cod = pending_cod_driver + pending_cod_user
+    
     df_users = get_all_users()
     wh_loc = get_warehouse_loc()
     active_points = get_active_points()
 
-    # --- CSS TẠO CHẤM ĐỎ TĨNH NHƯ SỐ MŨ CHO MENU QUẢN LÝ ĐƠN HÀNG ---
-    if pending_orders > 0:
-        st.markdown("""<style>[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::after { content: ''; display: inline-block; width: 8px; height: 8px; background-color: #FF4B4B; border-radius: 50%; margin-left: 3px; transform: translateY(-8px); }</style>""", unsafe_allow_html=True)
+    css_dots = ""
+    if pending_standard > 0:
+        css_dots += """[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::after { content: ''; display: inline-block; width: 8px; height: 8px; background-color: #FF4B4B; border-radius: 50%; margin-left: 3px; transform: translateY(-8px); }"""
+    if pending_cod > 0:
+        css_dots += """[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::after { content: ''; display: inline-block; width: 8px; height: 8px; background-color: #1976D2; border-radius: 50%; margin-left: 3px; transform: translateY(-8px); }"""
+    if css_dots:
+        st.markdown(f"<style>{css_dots}</style>", unsafe_allow_html=True)
 
-    # ==========================================
-    # HEADER
-    # ==========================================
-    # [CẬP NHẬT 3]: Lấy admin_name bằng biến customer thay vì username
     current_admin = st.session_state.customer
     admin_name = df_users[df_users['username'] == current_admin]['fullname'].values[0] if not df_users.empty and current_admin in df_users['username'].values else current_admin
 
@@ -114,13 +101,12 @@ def render_page():
         with st.popover(f"{admin_name}", use_container_width=True):
             st.markdown(f"**<i class='fa-solid fa-user-shield' style='color:#FF4B4B;'></i> Quản trị:**<br><span style='color:#e0e0e0;'>{admin_name}</span>", unsafe_allow_html=True)
             st.divider()
+            # [CHỈ FIX ĐÚNG ĐOẠN ĐĂNG XUẤT NÀY]
             if st.button("Đăng xuất", use_container_width=True, type="primary"):
-                # [CẬP NHẬT 4]: Xóa biến customer khi đăng xuất
-                st.session_state.role = None; st.session_state.customer = None; st.query_params.clear(); st.rerun()
+                st.session_state.clear()
+                st.query_params.clear()
+                st.rerun()
 
-    # ==========================================
-    # SIDEBAR
-    # ==========================================
     if logo_head_b64:
         logo_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
     else:
@@ -134,16 +120,15 @@ def render_page():
             </div>
         """, unsafe_allow_html=True)
         
-        # NÚT LÀM MỚI ĐÃ ĐƯỢC NHÚNG ICON QUA CSS
         if st.button("LÀM MỚI DỮ LIỆU", use_container_width=True):
             st.cache_data.clear()
             st.rerun()
             
         st.markdown("<hr style='margin: 10px 0; border-color: #333;'>", unsafe_allow_html=True)
-        menu_selection = st.radio("Điều hướng", ["Bản đồ Điều phối", "Quản lý Đơn hàng", "Quản lý Tài xế", "Quản lý Khách hàng"], label_visibility="collapsed")
+        
+        menu_selection = st.radio("Điều hướng", ["Bản đồ Điều phối", "Quản lý Đơn hàng", "Quản lý Hỏa tốc (COD)", "Lịch sử Đơn hàng", "Hệ thống Tài khoản"], label_visibility="collapsed")
         
         st.markdown("<div style='flex-grow: 1; height: 35vh;'></div>", unsafe_allow_html=True)
-        
         st.markdown(f"""
             <div style="text-align: center; padding: 20px 0; border-top: 1px solid #333; margin-top: auto;">
                 <img src="data:image/png;base64,{bg_img_b64}" style="width: 140px; opacity: 0.15; filter: grayscale(100%); transition: all 0.3s ease;">
@@ -154,9 +139,6 @@ def render_page():
 
     st.markdown("<div style='margin-top:-50px;'></div>", unsafe_allow_html=True)
 
-    # ---------------------------------------------------------
-    # GIAO DIỆN 1: BẢN ĐỒ ĐIỀU PHỐI 
-    # ---------------------------------------------------------
     if menu_selection == "Bản đồ Điều phối":
         st.markdown(f"""
             <div style="display: flex; align-items: center; margin-bottom: 20px; z-index: 2; position: relative;">
@@ -165,11 +147,20 @@ def render_page():
             </div>
         """, unsafe_allow_html=True)
 
-        if pending_orders > 0:
+        if pending_standard > 0:
             st.markdown(f"""
-                <div style="background-color: rgba(255, 204, 0, 0.15); border-left: 4px solid #ffcc00; padding: 12px 20px; border-radius: 5px; margin-bottom: 20px;">
+                <div style="background-color: rgba(255, 204, 0, 0.15); border-left: 4px solid #ffcc00; padding: 12px 20px; border-radius: 5px; margin-bottom: 10px;">
                     <span style="color: #ffcc00; font-weight: bold; font-size: 15px;">
-                        <i class="fa-solid fa-bell"></i> CÓ {pending_orders} YÊU CẦU ĐANG CHỜ XÁC NHẬN. VUI LÒNG CHUYỂN SANG TAB QUẢN LÝ ĐƠN HÀNG ĐỂ DUYỆT!
+                        <i class="fa-solid fa-bell"></i> CÓ {pending_standard} YÊU CẦU ĐƠN CHUỖI ĐANG CHỜ XÁC NHẬN. VUI LÒNG CHUYỂN SANG TAB QUẢN LÝ ĐƠN HÀNG!
+                    </span>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        if pending_cod > 0:
+            st.markdown(f"""
+                <div style="background-color: rgba(25, 118, 210, 0.15); border-left: 4px solid #1976D2; padding: 12px 20px; border-radius: 5px; margin-bottom: 20px;">
+                    <span style="color: #1976D2; font-weight: bold; font-size: 15px;">
+                        <i class="fa-solid fa-truck-fast"></i> CÓ {pending_cod} YÊU CẦU HỎA TỐC (COD) ĐANG CHỜ XÁC NHẬN. VUI LÒNG CHUYỂN SANG TAB QUẢN LÝ HỎA TỐC!
                     </span>
                 </div>
             """, unsafe_allow_html=True)
@@ -231,7 +222,6 @@ def render_page():
                             loc = geolocator.geocode(addr_ord)
                             if loc:
                                 conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                                # [CẬP NHẬT 5]: Ghi log người tạo bằng current_admin thay vì cứng 'admin'
                                 cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận')", (loc.latitude, loc.longitude, "Chờ xử lý", current_admin))
                                 conn.commit(); conn.close()
                                 st.cache_data.clear(); st.rerun()
@@ -240,7 +230,6 @@ def render_page():
                         if map_data and map_data.get("last_clicked"):
                             if st.button("Tạo đơn tại điểm vừa bấm"):
                                 conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                                # [CẬP NHẬT 6]: Tương tự như trên
                                 cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận')", (map_data['last_clicked']['lat'], map_data['last_clicked']['lng'], "Chờ xử lý", current_admin))
                                 conn.commit(); conn.close()
                                 st.cache_data.clear(); st.rerun()
@@ -252,7 +241,6 @@ def render_page():
                             for _ in range(5):
                                 r_lat = base_lat + random.uniform(-0.015, 0.015)
                                 r_lon = base_lon + random.uniform(-0.015, 0.015)
-                                # [CẬP NHẬT 7]: Tương tự như trên
                                 cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận')", (r_lat, r_lon, "Chờ xử lý", current_admin))
                             conn.commit(); conn.close()
                             st.cache_data.clear(); st.rerun()
@@ -279,9 +267,6 @@ def render_page():
                 status_color = "gray" if is_off else ("#00FF00" if drv['current_status']=="Sẵn sàng" else "orange")
                 st.markdown(f'<div style="background-color: #1A1C24; padding: 12px; border-radius: 8px; border-left: 5px solid {status_color}; margin-bottom: 10px;"><h4 style="margin:0; color: white;"><i class="fa-solid fa-circle" style="color: {status_color}; font-size: 10px; margin-right: 5px;"></i> {drv["fullname"]}</h4><small style="color:#A0AEC0;">Trạng thái: <b>{drv["current_status"]}</b></small></div>', unsafe_allow_html=True)
 
-    # ---------------------------------------------------------
-    # GIAO DIỆN 1.5: QUẢN LÝ ĐƠN HÀNG 
-    # ---------------------------------------------------------
     elif menu_selection == "Quản lý Đơn hàng":
         st.markdown(f"""
             <div style="display: flex; align-items: center; margin-bottom: 20px; z-index: 2; position: relative;">
@@ -291,7 +276,6 @@ def render_page():
         """, unsafe_allow_html=True)
         st.divider()
 
-        # HIỂN THỊ YÊU CẦU TỪ KHÁCH HÀNG (TẠO ĐƠN MỚI)
         if pending_user > 0:
             st.markdown(f"""
                 <div style="background-color: rgba(25, 118, 210, 0.15); border-left: 4px solid #1976D2; padding: 12px 20px; border-radius: 5px; margin-bottom: 20px;">
@@ -301,11 +285,10 @@ def render_page():
                 </div>
             """, unsafe_allow_html=True)
             
-            # --- Truy xuất tên khách hàng vừa tạo đơn ---
             requesting_customer = "Khách hàng"
             try:
                 conn_cust = pyodbc.connect(CONN_STR)
-                cust_df = pd.read_sql("SELECT TOP 1 created_by FROM LogisticsPoints WHERE status = N'Chờ Admin duyệt'", conn_cust)
+                cust_df = pd.read_sql("SELECT TOP 1 created_by FROM LogisticsPoints WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'", conn_cust)
                 if not cust_df.empty:
                     req_username = cust_df.iloc[0]['created_by']
                     name_df = pd.read_sql(f"SELECT ISNULL(fullname, username) as fullname FROM userstable WHERE username='{req_username}'", conn_cust)
@@ -328,19 +311,18 @@ def render_page():
                 c_btn3, c_btn4 = st.columns(2)
                 if c_btn3.button("DUYỆT TẤT CẢ VÀO HỆ THỐNG", type="primary", use_container_width=True, key="app_all_user"):
                     conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                    cursor.execute("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt'")
+                    cursor.execute("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'")
                     conn.commit(); conn.close()
                     st.cache_data.clear()
                     st.success("Đã duyệt thành công! Các đơn này đã xuất hiện trên bản đồ Tài xế.")
                     st.rerun()
                 if c_btn4.button("TỪ CHỐI TẤT CẢ", use_container_width=True, key="rej_all_user"):
                     conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                    cursor.execute("UPDATE LogisticsPoints SET status = N'Từ chối' WHERE status = N'Chờ Admin duyệt'")
+                    cursor.execute("UPDATE LogisticsPoints SET status = N'Từ chối' WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'")
                     conn.commit(); conn.close()
                     st.cache_data.clear(); st.rerun()
             st.divider()
 
-        # HIỂN THỊ YÊU CẦU TỪ TÀI XẾ (XIN HOÀN THÀNH)
         if pending_driver > 0:
             st.markdown(f"""
                 <div style="background-color: rgba(255, 204, 0, 0.15); border-left: 4px solid #ffcc00; padding: 12px 20px; border-radius: 5px; margin-bottom: 20px;">
@@ -373,75 +355,27 @@ def render_page():
                 c_btn1, c_btn2 = st.columns(2)
                 if c_btn1.button("DUYỆT TẤT CẢ HOÀN THÀNH", type="primary", use_container_width=True, key="app_all_driver"):
                     conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                    cursor.execute("UPDATE LogisticsPoints SET status = N'Đã hoàn thành', delivery_status = N'Đã hoàn thành' WHERE delivery_status = N'Đang chờ duyệt'")
+                    cursor.execute("UPDATE LogisticsPoints SET status = N'Đã hoàn thành', delivery_status = N'Đã hoàn thành' WHERE delivery_status = N'Đang chờ duyệt' AND ISNULL(order_type, '') != N'lẻ'")
                     conn.commit(); conn.close()
                     st.cache_data.clear()
                     st.success("Đã duyệt thành công!"); st.rerun()
                 if c_btn2.button("TỪ CHỐI TẤT CẢ", use_container_width=True, key="rej_all_driver"):
                     conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                    cursor.execute("UPDATE LogisticsPoints SET delivery_status = N'Chờ xác nhận' WHERE delivery_status = N'Đang chờ duyệt'")
+                    cursor.execute("UPDATE LogisticsPoints SET delivery_status = N'Chờ xác nhận' WHERE delivery_status = N'Đang chờ duyệt' AND ISNULL(order_type, '') != N'lẻ'")
                     conn.commit(); conn.close()
                     st.cache_data.clear(); st.rerun()
 
-        if pending_orders == 0:
-            st.info("Hiện không có đơn hàng hay yêu cầu nào đang chờ duyệt.")
+        if pending_standard == 0:
+            st.info("Hiện không có ĐƠN CHUỖI nào đang chờ duyệt.")
 
-    # ---------------------------------------------------------
-    # GIAO DIỆN 2: QUẢN LÝ TÀI XẾ 
-    # ---------------------------------------------------------
-    elif menu_selection == "Quản lý Tài xế":
-        st.markdown(f"""
-            <div style="display: flex; align-items: center; margin-bottom: 20px; z-index: 2; position: relative;">
-                <i class="fa-solid fa-id-card-clip" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
-                <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">QUẢN LÝ DANH SÁCH TÀI XẾ</h1>
-            </div>
-        """, unsafe_allow_html=True)
-        st.divider()
-        if not df_users.empty:
-            df_drivers = df_users[df_users['role'] == '2']
-            if not df_drivers.empty:
-                display_df = df_drivers[['username', 'fullname', 'current_status', 'is_locked']].copy()
-                display_df['Trạng thái khóa'] = display_df['is_locked'].apply(lambda x: "Bị khóa" if x == 1 else "Bình thường")
-                st.dataframe(display_df[['username', 'fullname', 'current_status', 'Trạng thái khóa']], use_container_width=True, hide_index=True)
-                st.markdown("### Chỉnh sửa thông tin Tài xế")
-                col_form1, col_form2 = st.columns(2)
-                with col_form1:
-                    target_driver = st.selectbox("Chọn tài khoản Tài xế:", df_drivers['username'].tolist())
-                    driver_info = df_drivers[df_drivers['username'] == target_driver].iloc[0]
-                    with st.form("edit_driver_form"):
-                        new_fn = st.text_input("Tên hiển thị (Tên thật):", value=driver_info['fullname'])
-                        new_lock_str = st.radio("Quyền truy cập:", ["Bình thường", "Bị khóa"], index=int(driver_info['is_locked']), horizontal=True)
-                        if st.form_submit_button("Lưu thay đổi", use_container_width=True):
-                            if update_user_info(target_driver, new_fn, 1 if new_lock_str == "Bị khóa" else 0):
-                                st.cache_data.clear()
-                                st.success("Đã cập nhật!"); st.rerun()
+    elif menu_selection == "Quản lý Hỏa tốc (COD)":
+        import admincod
+        admincod.render_cod_admin_page()
 
-    # ---------------------------------------------------------
-    # GIAO DIỆN 3: QUẢN LÝ KHÁCH HÀNG 
-    # ---------------------------------------------------------
-    elif menu_selection == "Quản lý Khách hàng":
-        st.markdown(f"""
-            <div style="display: flex; align-items: center; margin-bottom: 20px; z-index: 2; position: relative;">
-                <i class="fa-solid fa-users" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
-                <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">QUẢN LÝ DANH SÁCH KHÁCH HÀNG</h1>
-            </div>
-        """, unsafe_allow_html=True)
-        st.divider()
-        if not df_users.empty:
-            df_customers = df_users[df_users['role'] == '3']
-            if not df_customers.empty:
-                display_df = df_customers[['username', 'fullname', 'is_locked']].copy()
-                display_df['Trạng thái khóa'] = display_df['is_locked'].apply(lambda x: "Bị khóa" if x == 1 else "Bình thường")
-                st.dataframe(display_df[['username', 'fullname', 'Trạng thái khóa']], use_container_width=True, hide_index=True)
-                st.markdown("### Chỉnh sửa thông tin Khách hàng")
-                col_form1, col_form2 = st.columns(2)
-                with col_form1:
-                    target_customer = st.selectbox("Chọn tài khoản Khách hàng:", df_customers['username'].tolist())
-                    customer_info = df_customers[df_customers['username'] == target_customer].iloc[0]
-                    with st.form("edit_customer_form"):
-                        new_fn = st.text_input("Tên hiển thị (Tên thật):", value=customer_info['fullname'])
-                        new_lock_str = st.radio("Quyền truy cập:", ["Bình thường", "Bị khóa"], index=int(customer_info['is_locked']), horizontal=True)
-                        if st.form_submit_button("Lưu thay đổi", use_container_width=True):
-                            if update_user_info(target_customer, new_fn, 1 if new_lock_str == "Bị khóa" else 0):
-                                st.cache_data.clear()
-                                st.success("Đã cập nhật!"); st.rerun()
+    elif menu_selection == "Lịch sử Đơn hàng":
+        import order_history
+        order_history.render_history(st.session_state.customer, str(st.session_state.role))
+
+    elif menu_selection == "Hệ thống Tài khoản":
+        import user_profile
+        user_profile.render_profile(st.session_state.customer, str(st.session_state.role))

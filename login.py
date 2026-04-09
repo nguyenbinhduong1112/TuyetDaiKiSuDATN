@@ -2,7 +2,12 @@ import streamlit as st
 import pyodbc
 import base64
 import os
+import jwt  # Thư viện mã hóa
+from datetime import datetime, timedelta, timezone
 from config import CONN_STR
+
+# Khóa bí mật (Bắt buộc phải giống hệt khóa trong main.py)
+SECRET_KEY = "umbrella_logistics_super_secret_key_2026"
 
 # --- HÀM HỖ TRỢ ĐỌC ẢNH SANG BASE64 ---
 def get_base64_of_bin_file(bin_file):
@@ -242,11 +247,20 @@ def render_page():
                                     if result == "LOCKED":
                                         st.error("Tài khoản của bạn đã bị khóa bởi Quản trị viên!")
                                     elif result is not None:
-                                        # LƯU VÀO SESSION VÀ ĐẨY LÊN URL
+                                        # 1. Lưu vào RAM
                                         st.session_state.role = str(result)
                                         st.session_state.customer = user
-                                        st.query_params["customer"] = user
-                                        st.query_params["role"] = str(result)
+                                        
+                                        # 2. [MỚI] MÃ HÓA JWT VÀ GẮN LÊN URL TRÌNH DUYỆT
+                                        payload = {
+                                            "username": user,
+                                            "role": str(result),
+                                            "exp": datetime.now(timezone.utc) + timedelta(days=30) # Sống 30 ngày
+                                        }
+                                        # Dùng máy ép tạo Token
+                                        encoded_token = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+                                        # Ném lên URL
+                                        st.query_params["token"] = encoded_token
                                         
                                         # XÓA SẠCH GIAO DIỆN CŨ TRƯỚC KHI RERUN (Diệt Bóng ma)
                                         login_placeholder.empty()

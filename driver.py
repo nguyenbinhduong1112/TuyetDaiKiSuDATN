@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import pandas as pd
 import folium
+from folium.plugins import AntPath
 from streamlit_folium import st_folium
 from model import PointerNet
 from map_utils import MapManager
@@ -15,7 +16,7 @@ import random
 import pyodbc
 from config import CONN_STR
 
-# --- CÁC HÀM XỬ LÝ LOGIC & CACHE (ĐỂ BÊN NGOÀI ĐỂ TỐI ƯU HIỆU NĂNG) ---
+# --- CÁC HÀM XỬ LÝ LOGIC & CACHE (ĐƠN CHUỖI) ---
 def calculate_route_distance(locations, route_indices):
     if not route_indices or len(route_indices) < 2: return 0.0
     R, total_dist = 6371.0, 0.0
@@ -39,7 +40,7 @@ def fetch_real_data():
         conn = pyodbc.connect(CONN_STR)
         df_kho = pd.read_sql("SELECT lat, lon FROM WarehouseConfig WHERE id = 1", conn)
         kho = [df_kho.iloc[0]['lat'], df_kho.iloc[0]['lon']] if not df_kho.empty else [18.6601, 105.6942]
-        df_pts = pd.read_sql("SELECT lat, lon FROM LogisticsPoints WHERE status = N'Chờ xử lý'", conn)
+        df_pts = pd.read_sql("SELECT lat, lon FROM LogisticsPoints WHERE status = N'Chờ xử lý' AND order_type = N'chuỗi'", conn)
         conn.close()
         return np.array([kho] + df_pts.values.tolist()), len(df_pts)
     except: return np.array([[18.6601, 105.6942]]), 0
@@ -61,8 +62,6 @@ def load_all():
     return model, MapManager()
 
 @st.cache_data(ttl=300)
-# [CẬP NHẬT 1]: Vẫn dùng hàm get_driver_fullname nhận đầu vào là 'username' ở DB, 
-# nhưng lúc gọi sẽ truyền biến 'customer' vào.
 def get_driver_fullname(username):
     try:
         conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
@@ -71,7 +70,18 @@ def get_driver_fullname(username):
         return row[0] if row and row[0] else username
     except: return username
 
-# [CẬP NHẬT 2]: Lấy tên đăng nhập hiện tại từ st.session_state.customer
+def get_driver_info_from_db(username):
+    try:
+        conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
+        cursor.execute("SELECT current_status, lat, lon FROM userstable WHERE username = ?", (username,))
+        row = cursor.fetchone(); conn.close()
+        if row:
+            status = row[0] if row[0] else "Ngoại tuyến"
+            loc = [row[1], row[2]] if row[1] is not None and row[2] is not None else None
+            return status, loc
+        return "Ngoại tuyến", None
+    except: return "Ngoại tuyến", None
+
 def update_location(status, lat, lon):
     try:
         conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
@@ -85,58 +95,65 @@ def update_location(status, lat, lon):
 # HÀM RENDER ĐƯỢC GỌI TỪ MAIN.PY
 # ==========================================
 def render_page():
-    # Đọc sẵn ảnh Base64 từ ổ cứng bằng ĐƯỜNG DẪN TƯƠNG ĐỐI
     gmaps_hover_b64 = get_base64_of_bin_file(os.path.join("img", "Google-Maps-PNG-Free-Download.png"))
     bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
     logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png"))
 
-    # CSS CHO UI (Đã đổi vị trí Icon 3 và 4)
-    st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; z-index: 2; position: relative; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f5a0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f2c2'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}.gmaps-btn {{ position: relative; display: flex; align-items: center; justify-content: center; background-color: #FF4B4B !important; color: white !important; padding: 0.7rem 1rem; border-radius: 8px; text-decoration: none !important; font-weight: 700; font-size: 18px; border: 1px solid #FF4B4B !important; transition: all 0.3s ease-in-out; width: 100%; box-sizing: border-box; overflow: hidden; }}.gmaps-btn::before {{ content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background-image: url('data:image/png;base64,{gmaps_hover_b64}'); background-size: 40px; background-repeat: no-repeat; background-position: 20px center; transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1); z-index: 1; opacity: 0; }}.gmaps-btn:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; }}.gmaps-btn:hover::before {{ left: 0; opacity: 0.6; }}.btn-text-content {{ position: relative; z-index: 2; display: flex; align-items: center; gap: 8px; }}button[kind="primary"] {{ background-color: #FF4B4B !important; border-color: #FF4B4B !important; transition: all 0.3s ease-in-out !important; }}button[kind="primary"]:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; color: white !important; }}.qr-overlay {{ display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 999999; justify-content: center; align-items: center; backdrop-filter: blur(5px); }}#qr-toggle:checked ~ .qr-overlay {{ display: flex !important; }}.qr-popup {{ background: white; padding: 20px; border-radius: 15px; position: relative; text-align: center; box-shadow: 0 0 30px rgba(0,0,0,0.8); }}.close-btn {{ position: absolute; top: -15px; right: -15px; background: #FF4B4B; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 24px; font-weight: bold; border: 3px solid white; transition: 0.3s; }}.open-btn {{ display: block; background: #262730; color: white; text-align: center; border-radius: 6px; cursor: pointer; font-weight: bold; border: 1px solid #444; transition: 0.3s; }}.open-btn:hover {{ background: #3a3d4a; border-color: #666; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
+    # [CẬP NHẬT CSS]: Thêm icon Lịch sử \f1da vào vị trí số 4, Cá nhân xuống vị trí 5
+    st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; z-index: 2; position: relative; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f468'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f5a0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f1da'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(5) p::before {{ content: '\\f2c2'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}.gmaps-btn {{ position: relative; display: flex; align-items: center; justify-content: center; background-color: #FF4B4B !important; color: white !important; padding: 0.7rem 1rem; border-radius: 8px; text-decoration: none !important; font-weight: 700; font-size: 18px; border: 1px solid #FF4B4B !important; transition: all 0.3s ease-in-out; width: 100%; box-sizing: border-box; overflow: hidden; }}.gmaps-btn::before {{ content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background-image: url('data:image/png;base64,{gmaps_hover_b64}'); background-size: 40px; background-repeat: no-repeat; background-position: 20px center; transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1); z-index: 1; opacity: 0; }}.gmaps-btn:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; }}.gmaps-btn:hover::before {{ left: 0; opacity: 0.6; }}.btn-text-content {{ position: relative; z-index: 2; display: flex; align-items: center; gap: 8px; }}button[kind="primary"] {{ background-color: #FF4B4B !important; border-color: #FF4B4B !important; transition: all 0.3s ease-in-out !important; }}button[kind="primary"]:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; color: white !important; }}.qr-overlay {{ display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 999999; justify-content: center; align-items: center; backdrop-filter: blur(5px); }}#qr-toggle:checked ~ .qr-overlay {{ display: flex !important; }}.qr-popup {{ background: white; padding: 20px; border-radius: 15px; position: relative; text-align: center; box-shadow: 0 0 30px rgba(0,0,0,0.8); }}.close-btn {{ position: absolute; top: -15px; right: -15px; background: #FF4B4B; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 24px; font-weight: bold; border: 3px solid white; transition: 0.3s; }}.open-btn {{ display: block; background: #262730; color: white; text-align: center; border-radius: 6px; cursor: pointer; font-weight: bold; border: 1px solid #444; transition: 0.3s; }}.open-btn:hover {{ background: #3a3d4a; border-color: #666; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
 
-    # ĐỒNG BỘ TRÍ NHỚ TỪ URL VÀ CHẶN NGƯỜI LẠ
-    # [CẬP NHẬT 3]: Đổi 'user' thành 'customer' ở cả query_params và session_state
-    if "customer" in st.query_params: st.session_state.customer = st.query_params["customer"]
-    if "role" in st.query_params: st.session_state.role = st.query_params["role"]
-    
-    # [CẬP NHẬT 4]: Kiểm tra quyền bằng biến 'customer'
     if "customer" not in st.session_state or str(st.session_state.get("role", "")) != "2":
         st.warning("Vui lòng đăng nhập bằng tài khoản Tài xế!")
         st.stop()
 
-    # KHỞI TẠO BIẾN CHO MAP VÀ LOGIC
     if 'locations' not in st.session_state: st.session_state.locations, _ = fetch_real_data()
     if 'route_indices' not in st.session_state: st.session_state.route_indices = None
     if 'actual_path' not in st.session_state: st.session_state.actual_path = None
-    if 'driver_loc' not in st.session_state: st.session_state.driver_loc = None
-    if 'driver_status' not in st.session_state: st.session_state.driver_status = "Ngoại tuyến"
     if 'map_refresh_key' not in st.session_state: st.session_state.map_refresh_key = 0
 
-    model, map_mgr = load_all()
-    # [CẬP NHẬT 5]: Truyền biến 'customer' thay vì 'username' vào hàm lấy tên hiển thị
-    driver_fullname = get_driver_fullname(st.session_state.customer)
+    if 'driver_status' not in st.session_state or 'driver_loc' not in st.session_state:
+        db_status, db_loc = get_driver_info_from_db(st.session_state.customer)
+        st.session_state.driver_status = db_status
+        st.session_state.driver_loc = db_loc
 
-    # HEADER BÊN PHẢI (USER POPOVER)
+    model, map_mgr = load_all()
+    driver_user = st.session_state.customer
+    driver_fullname = get_driver_fullname(driver_user)
+
     col_space, col_user = st.columns([8.5, 1.5])
     with col_user:
         with st.popover(f"{driver_fullname}", use_container_width=True):
             st.markdown(f"**<i class='fa-solid fa-id-badge' style='color:#FF4B4B;'></i> Tài xế:**<br><span style='color:#e0e0e0;'>{driver_fullname}</span>", unsafe_allow_html=True)
-            new_status = st.selectbox("Tình trạng:", ["Sẵn sàng", "Đang giao hàng", "Ngoại tuyến"], index=["Sẵn sàng", "Đang giao hàng", "Ngoại tuyến"].index(st.session_state.driver_status))
+            try:
+                current_index = ["Sẵn sàng", "Đang giao hàng", "Ngoại tuyến"].index(st.session_state.driver_status)
+            except ValueError:
+                current_index = 2
+            new_status = st.selectbox("Tình trạng:", ["Sẵn sàng", "Đang giao hàng", "Ngoại tuyến"], index=current_index)
             if st.button("Cập nhật vị trí", use_container_width=True):
                 st.session_state.driver_status = new_status
                 if new_status != "Ngoại tuyến":
-                    lat, lon = 18.6733 + random.uniform(-0.01, 0.01), 105.6813 + random.uniform(-0.01, 0.01)
-                    st.session_state.driver_loc = [lat, lon]; update_location(new_status, lat, lon)
-                    st.session_state.map_refresh_key += 1; st.success("Đã cập nhật định vị!")
+                    if st.session_state.driver_loc is None:
+                        lat, lon = 18.6733 + random.uniform(-0.01, 0.01), 105.6813 + random.uniform(-0.01, 0.01)
+                        st.session_state.driver_loc = [lat, lon]
+                    else:
+                        lat, lon = st.session_state.driver_loc[0], st.session_state.driver_loc[1]
+                    update_location(new_status, lat, lon)
+                    st.session_state.map_refresh_key += 1
+                    st.success("Đã cập nhật trạng thái!")
                 else:
-                    st.session_state.driver_loc = None; update_location(new_status, None, None)
-                    st.session_state.map_refresh_key += 1; st.warning("Đã tắt định vị.")
+                    st.session_state.driver_loc = None
+                    update_location(new_status, None, None)
+                    st.session_state.map_refresh_key += 1
+                    st.warning("Đã tắt định vị.")
                 st.rerun()
             st.divider()
+            
+            # [CHỈ FIX ĐÚNG ĐOẠN NÀY]
             if st.button("Đăng xuất", use_container_width=True, type="primary"):
-                # [CẬP NHẬT 6]: Xóa biến 'customer' khi đăng xuất
-                st.session_state.role = None; st.session_state.customer = None; st.query_params.clear(); st.rerun()
+                st.session_state.clear()
+                st.query_params.clear()
+                st.rerun()
 
-    # SIDEBAR
     if logo_head_b64:
         logo_sidebar_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
     else:
@@ -144,13 +161,12 @@ def render_page():
 
     with st.sidebar:
         st.markdown(f"<div style='display: flex; align-items: center; margin-bottom: 20px;'>{logo_sidebar_html}<h3 style='color: white; margin: 0; font-weight: bold;'>QUẢN LÝ CÔNG VIỆC</h3></div>", unsafe_allow_html=True)
-        menu_selection = st.radio("Điều hướng", ["Đơn hàng chuỗi", "Đơn hàng lẻ", "Tình trạng giao thông", "Quản lý thông tin cá nhân"], label_visibility="collapsed")
+        menu_selection = st.radio("Điều hướng", ["Đơn hàng chuỗi", "Đơn hàng lẻ", "Tình trạng giao thông", "Lịch sử đơn hàng", "Quản lý thông tin cá nhân"], label_visibility="collapsed")
         st.markdown("<div style='flex-grow: 1; height: 35vh;'></div>", unsafe_allow_html=True)
         st.markdown(f"""<div style="text-align: center; padding: 20px 0; border-top: 1px solid #333; margin-top: auto;"><img src="data:image/png;base64,{bg_img_b64}" style="width: 140px; opacity: 0.15; filter: grayscale(100%);"><p style="color: #8b949e; font-size: 13px; margin-top: 15px; font-weight: bold; letter-spacing: 1px;">UMBRELLA DRIVER APP</p><p style="color: #444; font-size: 11px; margin-top: -10px;">Vinh City Supply Chain © 2026</p></div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:-50px;'></div>", unsafe_allow_html=True)
 
-    # NỘI DUNG CHÍNH (THEO MENU)
     if menu_selection == "Đơn hàng chuỗi":
         st.markdown(f"""
             <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
@@ -180,7 +196,7 @@ def render_page():
                 if st.button("Xác nhận đã hoàn thành đơn", use_container_width=True, type="primary"):
                     try:
                         conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                        cursor.execute("UPDATE LogisticsPoints SET delivery_status = N'Đang chờ duyệt' WHERE status = N'Chờ xử lý'")
+                        cursor.execute("UPDATE LogisticsPoints SET delivery_status = N'Đang chờ duyệt' WHERE status = N'Chờ xử lý' AND order_type = N'chuỗi'")
                         conn.commit(); conn.close()
                         get_pending_count.clear() 
                         st.success("Đã gửi yêu cầu lên Admin!"); st.rerun()
@@ -207,7 +223,15 @@ def render_page():
                 color = "#FF4B4B" if i == 0 else ("#1E90FF" if st.session_state.route_indices else "#555555")
                 label = "KHO" if i == 0 else (f"{st.session_state.route_indices.index(i)}" if st.session_state.route_indices else "?")
                 folium.Marker(location=[p[0], p[1]], icon=folium.DivIcon(html=f'<div style="color:white; background:{color}; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 13px;">{label}</div>')).add_to(m)
-            if st.session_state.actual_path: folium.PolyLine(locations=st.session_state.actual_path, color="#FF0000", weight=6, opacity=0.8).add_to(m)
+            
+            if st.session_state.route_indices and len(st.session_state.route_indices) > 1:
+                ordered_pts = [st.session_state.locations[i].tolist() for i in st.session_state.route_indices]
+                ordered_pts.append(st.session_state.locations[st.session_state.route_indices[0]].tolist()) 
+                AntPath(locations=ordered_pts, color="#1976D2", weight=4, dash_array=[15, 20], delay=800, tooltip="Vector Tuyến Giao Hàng").add_to(m)
+
+            if st.session_state.actual_path: 
+                folium.PolyLine(locations=st.session_state.actual_path, color="#FF0000", weight=6, opacity=0.8).add_to(m)
+            
             if st.session_state.driver_loc and st.session_state.driver_status != "Ngoại tuyến":
                 folium.Marker(location=st.session_state.driver_loc, icon=folium.Icon(color="green", icon="truck", prefix="fa"), tooltip=f"Tài xế: {driver_fullname}").add_to(m)
             st_folium(m, width="100%", height=550, key=f"driver_map_stable", returned_objects=[])
@@ -232,98 +256,17 @@ def render_page():
                 st.markdown(f"""<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #1A1C24; padding: 20px; border-radius: 10px; border: 1px solid #333;"><div style="color: #e0e0e0; font-size: 15px; font-weight: bold; margin-bottom: 12px;"><i class="fa-solid fa-qrcode" style="color:#FF4B4B;"></i> QR Google Maps App</div><img src="{qr_url}" style="width: 150px; border-radius: 8px; border: 3px solid white; margin-bottom: 15px;"><input type="checkbox" id="qr-toggle" style="display: none;"><label for="qr-toggle" class="open-btn" style="margin: 0; width: 150px; font-size: 14px; padding: 10px 5px;"> Phóng to QR</label><div class="qr-overlay"><div class="qr-popup"><label for="qr-toggle" class="close-btn">×</label><img src="{qr_url}" style="width: 65vh; max-width: 600px; border-radius: 10px; border: 2px solid #333;"><h3 style="color: black; margin-top: 15px; font-weight: bold;"><i class="fa-solid fa-mobile-screen-button"></i> Quét mã mở Google Maps</h3></div></div></div>""", unsafe_allow_html=True)
 
     elif menu_selection == "Đơn hàng lẻ":
-        st.markdown(f"""
-            <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
-                <i class="fa-solid fa-box" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
-                <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">Đơn hàng lẻ</h1>
-            </div>
-            <hr style="margin-top: 5px; border-color: #333; z-index: 2; position: relative;">
-        """, unsafe_allow_html=True)
-        st.info("Tính năng nhận cuốc đơn hàng lẻ đang được thiết kế. Vui lòng quay lại sau!")
+        import drivecod
+        drivecod.render_cod_page(driver_fullname)
 
     elif menu_selection == "Tình trạng giao thông":
-        st.markdown(f"""
-            <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
-                <i class="fa-solid fa-map-location-dot" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
-                <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">Giao thông & Thời tiết</h1>
-            </div>
-            <hr style="margin-top: 5px; border-color: #333; z-index: 2; position: relative;">
-        """, unsafe_allow_html=True)
+        import drivertraffic
+        drivertraffic.render_page()
 
-        col_weather, col_map_traffic = st.columns([1, 2.5])
-
-        with col_weather:
-            st.markdown("""<div style="background: linear-gradient(135deg, #1A1C24 0%, #2A2D3E 100%); padding: 20px; border-radius: 12px; border: 1px solid #444; box-shadow: 0 4px 15px rgba(0,0,0,0.3); text-align: center; position: relative; z-index: 2;">
-    <h3 style="color: white; margin-top: 0; margin-bottom: 5px;"><i class="fa-solid fa-location-dot" style="color: #FF4B4B;"></i> TP. Vinh, Nghệ An</h3>
-    <p style="color: #8b949e; font-size: 14px; margin-bottom: 15px;">Cập nhật thời gian thực</p>
-    <i class="fa-solid fa-cloud-sun" style="font-size: 60px; color: #FFCC00; margin-bottom: 10px;"></i>
-    <h1 style="color: white; font-size: 50px; margin: 0; font-weight: bold;">28°C</h1>
-    <p style="color: #e0e0e0; font-size: 16px; margin-top: 5px; font-weight: 500;">Ít mây, không mưa</p>
-    <div style="display: flex; justify-content: space-around; margin-top: 20px; border-top: 1px solid #444; padding-top: 15px;">
-    <div>
-    <i class="fa-solid fa-droplet" style="color: #1E90FF; font-size: 20px; margin-bottom: 5px;"></i>
-    <p style="color: #8b949e; font-size: 13px; margin: 0;">Độ ẩm</p>
-    <b style="color: white; font-size: 15px;">75%</b>
-    </div>
-    <div>
-    <i class="fa-solid fa-wind" style="color: #A9A9A9; font-size: 20px; margin-bottom: 5px;"></i>
-    <p style="color: #8b949e; font-size: 13px; margin: 0;">Gió</p>
-    <b style="color: white; font-size: 15px;">12 km/h</b>
-    </div>
-    </div>
-    <div style="margin-top: 20px; background: rgba(255, 75, 75, 0.1); border: 1px solid rgba(255, 75, 75, 0.3); padding: 10px; border-radius: 8px;">
-    <p style="color: #FF4B4B; font-size: 13px; margin: 0; font-weight: bold;"><i class="fa-solid fa-triangle-exclamation"></i> Cảnh báo: Tầm nhìn tốt, mặt đường khô ráo.</p>
-    </div>
-    </div>""", unsafe_allow_html=True)
-
-        with col_map_traffic:
-            st.markdown("""
-            <div style="border-radius: 12px; overflow: hidden; border: 1px solid #444; z-index: 2; position: relative; height: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-                <iframe 
-                    src="https://embed.waze.com/iframe?zoom=14&lat=18.6733&lon=105.6813&ct=livemap"
-                    width="100%" 
-                    height="100%" 
-                    style="border:0;" 
-                    allowfullscreen="">
-                </iframe>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            quotes = [
-                "Đường đi khó, không khó vì ngăn sông cách núi, mà khó vì... đèn đỏ quá lâu.",
-                "Nhanh một giây, chậm cả đời. Chậm một giây... khách gọi tổng đài hối đơn.",
-                "Phía trước là bầu trời, đằng sau là... hàng đống đơn chưa giao.",
-                "Đi chậm lại một chút để thấy cuộc đời... vẫn còn kẹt xe dài dài.",
-                "Đừng chạy quá nhanh để tâm hồn không kịp bắt kịp thể xác... và để không bị công an gọi vào.",
-                "Kẹt xe không phải là nỗi đau, kẹt xe là lúc ta sống chậm lại và... nghe nhạc bolero.",
-                "Đơn hàng dù có trễ, nụ cười vẫn luôn nở trên môi. (Bị trừ lương tính sau)",
-                "Chậm chắc còn hơn nhanh... nát bét."
-            ]
-            random_quote = random.choice(quotes)
-            
-            st.markdown(f"""
-            <div style="background-color: rgba(255, 75, 75, 0.1); border-left: 4px solid #FF4B4B; padding: 10px 15px; border-radius: 5px; margin-top: 15px; z-index: 2; position: relative;">
-                <span style="color: #e0e0e0; font-style: italic; font-size: 14px;"><i class="fa-solid fa-quote-left" style="color: #FF4B4B; margin-right: 8px;"></i>{random_quote}</span>
-            </div>
-            <p style="text-align: right; color: #8b949e; font-size: 12px; margin-top: 8px; z-index: 2; position: relative;">* Lớp dữ liệu giao thông được cập nhật trực tiếp qua nền tảng Waze Live Map.</p>
-            """, unsafe_allow_html=True)
+    elif menu_selection == "Lịch sử đơn hàng":
+        import order_history
+        order_history.render_history(st.session_state.customer, str(st.session_state.role))
 
     elif menu_selection == "Quản lý thông tin cá nhân":
-        st.markdown(f"""
-            <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
-                <i class="fa-solid fa-id-badge" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
-                <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">Quản lý thông tin cá nhân</h1>
-            </div>
-            <hr style="margin-top: 5px; border-color: #333; z-index: 2; position: relative;">
-        """, unsafe_allow_html=True)
-        
-        # [CẬP NHẬT 7]: Hiển thị tài khoản đăng nhập bằng biến 'customer'
-        st.markdown(f"""
-            <div style="background-color: #1A1C24; padding: 20px; border-radius: 10px; border: 1px solid #333; max-width: 500px; z-index: 2; position: relative;">
-                <h3 style="color: white; margin-top:0;">Hồ sơ Tài xế</h3>
-                <p style="color: #8b949e; font-size: 16px;"><b>Tài khoản đăng nhập:</b> <span style="color:white;">{st.session_state.customer}</span></p>
-                <p style="color: #8b949e; font-size: 16px;"><b>Họ và tên:</b> <span style="color:white;">{driver_fullname}</span></p>
-                <p style="color: #8b949e; font-size: 16px;"><b>Phân quyền hệ thống:</b> <span style="color:white;">Tài xế (Role 2)</span></p>
-                <p style="color: #8b949e; font-size: 16px;"><b>Tình trạng hiện tại:</b> <span style="color:white;">{st.session_state.driver_status}</span></p>
-            </div>
-        """, unsafe_allow_html=True)
+        import user_profile
+        user_profile.render_profile(st.session_state.customer, str(st.session_state.role))
