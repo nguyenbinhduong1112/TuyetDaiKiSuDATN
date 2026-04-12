@@ -200,7 +200,6 @@ def render_page():
                 create_time = pt['created_at'].strftime("%H:%M %d/%m/%Y") if isinstance(pt['created_at'], datetime) else str(pt['created_at'])
                 popup_html = f"""<div style="width:200px; color:black; font-family:sans-serif;"><b style="color:#D32F2F;"><i class="fa-solid fa-location-dot"></i> ĐƠN HÀNG PHÁT SINH</b><br><hr style='margin:5px 0'><b>Mã đơn:</b> #{pt['point_id']}<br><b>Người tạo:</b> {pt['created_by']}<br><b>Thời gian:</b> {create_time}<br><a href='{gmap_link}' target='_blank' style='color:#1976D2; font-weight:bold; text-decoration:none;'><i class="fa-solid fa-link"></i> Xem Google Maps</a></div>"""
                 
-                # [ĐÃ SỬA]: Lọc màu Cam cho đơn chờ duyệt, Đỏ cho đơn mới
                 if pt.get('delivery_status', '') == 'Đang chờ duyệt':
                     folium.Marker(location=[pt['lat'], pt['lon']], icon=folium.Icon(color="orange", icon="check", prefix="fa"), tooltip="Đơn chờ duyệt hoàn thành", popup=folium.Popup(popup_html, max_width=250)).add_to(m_admin)
                 else:
@@ -310,105 +309,8 @@ def render_page():
                 st.markdown(f'<div style="background-color: #1A1C24; padding: 12px; border-radius: 8px; border-left: 5px solid {status_color}; margin-bottom: 10px;"><h4 style="margin:0; color: white;"><i class="fa-solid fa-circle" style="color: {status_color}; font-size: 10px; margin-right: 5px;"></i> {drv["fullname"]}</h4><small style="color:#A0AEC0;">Trạng thái: <b>{drv["current_status"]}</b></small></div>', unsafe_allow_html=True)
 
     elif menu_selection == "Quản lý Đơn hàng":
-        st.markdown(f"""
-            <div style="display: flex; align-items: center; margin-bottom: 20px; z-index: 2; position: relative;">
-                <i class="fa-solid fa-boxes-stacked" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
-                <h1 style="margin: 0; font-size: 40px; font-weight: 700; color: white;">QUẢN LÝ ĐƠN HÀNG</h1>
-            </div>
-        """, unsafe_allow_html=True)
-        st.divider()
-
-        if pending_user > 0:
-            st.markdown(f"""
-                <div style="background-color: rgba(25, 118, 210, 0.15); border-left: 4px solid #1976D2; padding: 12px 20px; border-radius: 5px; margin-bottom: 20px;">
-                    <span style="color: #1976D2; font-weight: bold; font-size: 15px;">
-                        <i class="fa-solid fa-box"></i> CÓ {pending_user} ĐƠN YÊU CẦU TẠO MỚI TỪ KHÁCH HÀNG!
-                    </span>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            requesting_customer = "Khách hàng"
-            try:
-                conn_cust = pyodbc.connect(CONN_STR)
-                cust_df = pd.read_sql("SELECT TOP 1 created_by FROM LogisticsPoints WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'", conn_cust)
-                if not cust_df.empty:
-                    req_username = cust_df.iloc[0]['created_by']
-                    name_df = pd.read_sql(f"SELECT ISNULL(fullname, username) as fullname FROM userstable WHERE username='{req_username}'", conn_cust)
-                    if not name_df.empty:
-                        requesting_customer = name_df.iloc[0]['fullname']
-                conn_cust.close()
-            except: pass
-            request_time_user = datetime.now().strftime("%H:%M:%S - %d/%m/%Y")
-
-            with st.expander("Bấm vào đây để xem chi tiết & xử lý yêu cầu tạo đơn", expanded=True):
-                st.markdown(f"""
-                    <div style="background-color: #21262d; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #1976D2;">
-                        <h4 style="margin-top: 0; color: white; margin-bottom: 10px;">Chi tiết yêu cầu tạo đơn</h4>
-                        <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-user" style="color: #1976D2; width: 25px;"></i> <b>Khách hàng yêu cầu:</b> <span style="color: white; font-weight: bold;">{requesting_customer}</span></p>
-                        <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-clock" style="color: #1976D2; width: 25px;"></i> <b>Thời gian hệ thống nhận:</b> <span style="color: white;">{request_time_user}</span></p>
-                        <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-box" style="color: #1976D2; width: 25px;"></i> <b>Số lượng đơn mới:</b> <span style="color: white;">{pending_user} đơn hàng</span></p>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                c_btn3, c_btn4 = st.columns(2)
-                if c_btn3.button("DUYỆT TẤT CẢ VÀO HỆ THỐNG", type="primary", use_container_width=True, key="app_all_user"):
-                    conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                    cursor.execute("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'")
-                    conn.commit(); conn.close()
-                    st.cache_data.clear()
-                    st.success("Đã duyệt thành công! Các đơn này đã xuất hiện trên bản đồ Tài xế.")
-                    st.rerun()
-                if c_btn4.button("TỪ CHỐI TẤT CẢ", use_container_width=True, key="rej_all_user"):
-                    conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                    cursor.execute("UPDATE LogisticsPoints SET status = N'Từ chối' WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'")
-                    conn.commit(); conn.close()
-                    st.cache_data.clear(); st.rerun()
-            st.divider()
-
-        if pending_driver > 0:
-            st.markdown(f"""
-                <div style="background-color: rgba(255, 204, 0, 0.15); border-left: 4px solid #ffcc00; padding: 12px 20px; border-radius: 5px; margin-bottom: 20px;">
-                    <span style="color: #ffcc00; font-weight: bold; font-size: 15px;">
-                        <i class="fa-solid fa-bell"></i> CÓ {pending_driver} ĐƠN HÀNG ĐANG CHỜ XÁC NHẬN HOÀN THÀNH TỪ TÀI XẾ!
-                    </span>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            requesting_driver = "Không xác định"
-            try:
-                conn_dr = pyodbc.connect(CONN_STR)
-                dr_df = pd.read_sql("SELECT ISNULL(fullname, username) as fullname FROM userstable WHERE role='2' AND current_status != N'Ngoại tuyến'", conn_dr)
-                if not dr_df.empty:
-                    requesting_driver = dr_df.iloc[0]['fullname']
-                conn_dr.close()
-            except: pass
-            request_time = datetime.now().strftime("%H:%M:%S - %d/%m/%Y")
-
-            with st.expander("Bấm vào đây để xem chi tiết & xử lý yêu cầu hoàn thành", expanded=True):
-                st.markdown(f"""
-                    <div style="background-color: #21262d; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid #FF4B4B;">
-                        <h4 style="margin-top: 0; color: white; margin-bottom: 10px;">Chi tiết yêu cầu hoàn thành</h4>
-                        <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-user-tie" style="color: #FF4B4B; width: 25px;"></i> <b>Tài xế yêu cầu:</b> <span style="color: white; font-weight: bold;">{requesting_driver}</span></p>
-                        <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-clock" style="color: #FF4B4B; width: 25px;"></i> <b>Thời gian xác nhận:</b> <span style="color: white;">{request_time}</span></p>
-                        <p style="margin: 8px 0; color: #8b949e; font-size: 15px;"><i class="fa-solid fa-box-open" style="color: #FF4B4B; width: 25px;"></i> <b>Số lượng đơn:</b> <span style="color: white;">{pending_driver} đơn hàng</span></p>
-                    </div>
-                """, unsafe_allow_html=True)
-
-                c_btn1, c_btn2 = st.columns(2)
-                if c_btn1.button("DUYỆT TẤT CẢ HOÀN THÀNH", type="primary", use_container_width=True, key="app_all_driver"):
-                    conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                    cursor.execute("UPDATE LogisticsPoints SET status = N'Đã hoàn thành', delivery_status = N'Đã hoàn thành' WHERE delivery_status = N'Đang chờ duyệt' AND ISNULL(order_type, '') != N'lẻ'")
-                    conn.commit(); conn.close()
-                    st.cache_data.clear()
-                    st.success("Đã duyệt thành công!"); st.rerun()
-                if c_btn2.button("TỪ CHỐI TẤT CẢ", use_container_width=True, key="rej_all_driver"):
-                    conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                    cursor.execute("UPDATE LogisticsPoints SET delivery_status = N'Chờ xác nhận' WHERE delivery_status = N'Đang chờ duyệt' AND ISNULL(order_type, '') != N'lẻ'")
-                    conn.commit(); conn.close()
-                    st.cache_data.clear(); st.rerun()
-
-        if pending_standard == 0:
-            st.info("Hiện không có ĐƠN CHUỖI nào đang chờ duyệt.")
+        import admin_orders
+        admin_orders.render_page()
 
     elif menu_selection == "Quản lý Hỏa tốc (COD)":
         import admincod

@@ -1,8 +1,7 @@
 import streamlit as st
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
 import pyodbc
+import textwrap
 from config import CONN_STR
 
 # --- LẤY DỮ LIỆU ĐƠN CHỜ DUYỆT ---
@@ -19,7 +18,7 @@ def get_pending_cod_orders():
         df = pd.read_sql(query, conn)
         conn.close()
         return df
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 # --- LẤY DỮ LIỆU ĐƠN ĐANG CHẠY ---
@@ -28,40 +27,21 @@ def get_active_cod_orders():
     try:
         conn = pyodbc.connect(CONN_STR)
         query = """
-            SELECT point_id, status, delivery_status, created_by 
+            SELECT point_id, status, delivery_status, created_by, lat, lon 
             FROM LogisticsPoints 
             WHERE status IN (N'Chờ xử lý', N'Đang giao') AND order_type = N'lẻ'
+            ORDER BY created_at DESC
         """
         df = pd.read_sql(query, conn)
         conn.close()
         return df
     except: return pd.DataFrame()
 
-# --- HÀM XỬ LÝ (DUYỆT / HỦY THEO NHÓM ID) ---
-def approve_cod_group(point_ids):
+# --- HÀM XỬ LÝ DATABASE ---
+def execute_db_cod(query, params=()):
     try:
         conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-        placeholders = ','.join(['?'] * len(point_ids))
-        sql = f"UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE point_id IN ({placeholders})"
-        cursor.execute(sql, point_ids)
-        conn.commit(); conn.close()
-        return True
-    except: return False
-
-def reject_cod_group(point_ids):
-    try:
-        conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-        placeholders = ','.join(['?'] * len(point_ids))
-        sql = f"UPDATE LogisticsPoints SET status = N'Đã hủy' WHERE point_id IN ({placeholders})"
-        cursor.execute(sql, point_ids)
-        conn.commit(); conn.close()
-        return True
-    except: return False
-
-def approve_all_cod():
-    try:
-        conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-        cursor.execute("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt' AND order_type = N'lẻ'")
+        cursor.execute(query, params)
         conn.commit(); conn.close()
         return True
     except: return False
@@ -71,117 +51,116 @@ def approve_all_cod():
 # ==========================================
 def render_cod_admin_page():
     st.markdown(f"""
-        <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
-            <i class="fa-solid fa-clipboard-check" style="font-size: 40px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
-            <h1 style="margin: 0; font-size: 42px; font-weight: 700; color: white;">Trạm kiểm duyệt COD</h1>
+        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+            <i class="fa-solid fa-bolt-lightning" style="font-size: 40px; margin-right: 15px; color: #FFD700;"></i>
+            <h1 style="margin: 0; font-size: 42px; font-weight: 700; color: white;">Trạm Điều Phối Hỏa Tốc (COD)</h1>
         </div>
-        <hr style="margin-top: 5px; border-color: #333; z-index: 2; position: relative; margin-bottom: 20px;">
+        <p style="color: #8b949e; font-size: 15px; margin-bottom: 20px;">Duyệt và quản lý các yêu cầu giao hàng đa điểm tức thời.</p>
+        <hr style="border-color: #333; margin-bottom: 20px;">
     """, unsafe_allow_html=True)
 
     df_pending = get_pending_cod_orders()
     df_active = get_active_cod_orders()
 
-    # Nhóm các đơn có cùng người đặt, cùng điểm lấy và cùng thời gian thành 1 CHUYẾN XE
     num_trips = 0
+    grouped_pending = []
     if not df_pending.empty:
-        # Làm tròn thời gian đến phút để gom nhóm chính xác hơn, phòng sai số mili-giây
-        df_pending['time_group'] = pd.to_datetime(df_pending['created_at']).dt.floor('Min')
+        df_pending['time_group'] = pd.to_datetime(df_pending['created_at'], errors='coerce').dt.floor('Min')
         grouped_pending = df_pending.groupby(['pickup_lat', 'pickup_lon', 'created_by', 'time_group'])
         num_trips = len(grouped_pending)
 
-    # --- METRICS TỔNG QUAN ---
-    m1, m2, m3 = st.columns(3)
-    m1.markdown(f"""<div style="background: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; border-left: 4px solid #FF9800;">
-        <p style="color:#8b949e; margin:0; font-size: 14px;">Chuyến xe chờ duyệt</p>
-        <h2 style="color:white; margin:0;">{num_trips}</h2>
-    </div>""", unsafe_allow_html=True)
+    # --- CHỈ SỐ KPI ---
+    m1, m2, m3, m4 = st.columns(4)
+    metrics = [
+        ("Chuyến chờ duyệt", num_trips, "#FF9800", "fa-hourglass-start"),
+        ("Chờ Tài xế nhận", len(df_active[df_active['status'] == 'Chờ xử lý']) if not df_active.empty else 0, "#1E90FF", "fa-motorcycle"),
+        ("Đang đi giao", len(df_active[df_active['status'] == 'Đang giao']) if not df_active.empty else 0, "#4CAF50", "fa-truck-fast"),
+        ("Tổng đơn lẻ", len(df_pending) + len(df_active), "#E91E63", "fa-boxes-stacked")
+    ]
     
-    m2.markdown(f"""<div style="background: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; border-left: 4px solid #1E90FF;">
-        <p style="color:#8b949e; margin:0; font-size: 14px;">Chuyến chờ Tài xế</p>
-        <h2 style="color:white; margin:0;">{len(df_active[df_active['status'] == 'Chờ xử lý']) if not df_active.empty else 0}</h2>
-    </div>""", unsafe_allow_html=True)
-    
-    m3.markdown(f"""<div style="background: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; border-left: 4px solid #4CAF50;">
-        <p style="color:#8b949e; margin:0; font-size: 14px;">Điểm đang giao</p>
-        <h2 style="color:white; margin:0;">{len(df_active[df_active['status'] == 'Đang giao']) if not df_active.empty else 0}</h2>
-    </div>""", unsafe_allow_html=True)
+    for col, (label, val, color, icon) in zip([m1, m2, m3, m4], metrics):
+        col.markdown(f"""
+            <div style="background: #1A1C24; padding: 15px; border-radius: 10px; border-left: 5px solid {color}; border: 1px solid #333;">
+                <p style="color:#8b949e; margin:0; font-size: 13px; font-weight: bold; text-transform: uppercase;"><i class="fa-solid {icon}"></i> {label}</p>
+                <h2 style="color:white; margin:5px 0 0 0;">{val}</h2>
+            </div>
+        """, unsafe_allow_html=True)
 
     st.write("")
+    
+    # CSS ICON CHO TABS
+    st.markdown("""
+        <style>
+            div[data-testid="stTabs"] button[role="tab"]:nth-child(1) p::before { content: '\\f0f3 '; font-family: "Font Awesome 6 Free"; font-weight: 900; color: #FF9800; }
+            div[data-testid="stTabs"] button[role="tab"]:nth-child(2) p::before { content: '\\f21c '; font-family: "Font Awesome 6 Free"; font-weight: 900; color: #1E90FF; }
+        </style>
+    """, unsafe_allow_html=True)
 
-    col_list, col_map = st.columns([1.5, 2.5], gap="large")
+    tab1, tab2 = st.tabs([" CHỜ DUYỆT", " ĐƠN ĐANG CHẠY"])
 
-    # ================== CỘT DANH SÁCH CHỜ DUYỆT ==================
-    with col_list:
-        st.markdown("### <i class='fa-solid fa-list' style='color:#FF4B4B;'></i> Tuyến xe mới", unsafe_allow_html=True)
-        
+    with tab1:
         if df_pending.empty:
-            st.info("Hiện không có tuyến Hỏa tốc nào cần duyệt.")
-            if st.button("Làm mới trang", use_container_width=True):
-                get_pending_cod_orders.clear(); st.rerun()
+            st.info("Hiện không có chuyến Hỏa tốc nào cần duyệt.")
         else:
-            if st.button("✅ DUYỆT TẤT CẢ CÁC TUYẾN", type="primary", use_container_width=True):
-                with st.spinner("Đang duyệt toàn bộ..."):
-                    if approve_all_cod():
-                        get_pending_cod_orders.clear()
-                        get_active_cod_orders.clear()
-                        st.success("Đã duyệt tất cả! Đã đẩy sang app Tài xế.")
-                        st.rerun()
+            col_b1, col_b2, _ = st.columns([1.5, 1.5, 5])
+            if col_b1.button("Duyệt Tất Cả", type="primary", use_container_width=True):
+                if execute_db_cod("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt' AND order_type = N'lẻ'"):
+                    st.cache_data.clear(); st.rerun()
+            if col_b2.button("Làm mới", use_container_width=True):
+                st.cache_data.clear(); st.rerun()
             
-            st.markdown("<hr style='margin: 15px 0; border-color: #333;'>", unsafe_allow_html=True)
-            
-            # ĐÃ SỬA LỖI: HIỂN THỊ THEO TỪNG NHÓM (CHUYẾN XE) THAY VÌ TỪNG DÒNG DB
+            st.markdown("<br>", unsafe_allow_html=True)
+            cols = st.columns(2)
+            idx = 0
+
             for (p_lat, p_lon, creator, t_grp), group in grouped_pending:
                 point_ids = group['point_id'].tolist()
-                id_strs = ", ".join(map(str, point_ids))
-                time_str = group.iloc[0]['created_at'].strftime("%H:%M %d/%m/%Y") if isinstance(group.iloc[0]['created_at'], pd.Timestamp) else str(group.iloc[0]['created_at'])
+                time_str = group.iloc[0]['created_at'].strftime("%H:%M - %d/%m/%Y")
                 
-                st.markdown(f"""
-                <div style="background: rgba(30, 144, 255, 0.05); border: 1px solid #333; border-left: 4px solid #9C27B0; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
-                    <div style="display:flex; justify-content: space-between; margin-bottom: 5px;">
-                        <b style="color: #9C27B0; font-size: 16px;"><i class="fa-solid fa-motorcycle"></i> Tuyến đa điểm</b>
-                        <span style="color: #e0e0e0; font-size: 14px;"><i class="fa-solid fa-user"></i> {creator}</span>
+                # SỬ DỤNG DEDENT ĐỂ XÓA KHOẢNG TRẮNG ĐẦU DÒNG GÂY LỖI LÒI CODE
+                card_html = textwrap.dedent(f"""
+                    <div style="background-color: #21262d; border: 1px solid #30363d; border-radius: 12px; padding: 20px; margin-bottom: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 15px; border-bottom: 1px solid #30363d; padding-bottom: 10px;">
+                            <span style="background: #9C27B0; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; text-transform: uppercase;">
+                                <i class="fa-solid fa-route"></i> Chuyến Đa Điểm
+                            </span>
+                            <span style="color: #8b949e; font-size: 12px;"><i class="fa-solid fa-clock"></i> {time_str}</span>
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                            <p style="margin: 0; color: #e0e0e0; font-size: 16px;"><i class="fa-solid fa-circle-user" style="color: #1E90FF;"></i> <b>Khách:</b> {creator}</p>
+                            <p style="margin: 5px 0 0 0; color: #8b949e; font-size: 14px;"><i class="fa-solid fa-layer-group" style="color: #4CAF50;"></i> <b>Quy mô:</b> {len(point_ids)} địa điểm giao</p>
+                        </div>
+                        <div style="background: #1A1C24; padding: 12px; border-radius: 8px; border-left: 4px solid #FF9800;">
+                            <p style="margin:0; color: #FF9800; font-size: 12px; font-weight: bold;">ĐỊA ĐIỂM LẤY HÀNG</p>
+                            <p style="margin:0; color: #e0e0e0; font-size: 13px;"><i class="fa-solid fa-map-pin"></i> Tọa độ: {p_lat:.4f}, {p_lon:.4f}</p>
+                        </div>
+                        <div style="background: #1A1C24; padding: 12px; border-radius: 8px; border-left: 4px solid #4CAF50; margin-top: 10px;">
+                            <p style="margin:0; color: #4CAF50; font-size: 12px; font-weight: bold;">DANH SÁCH MÃ ĐƠN GIAO</p>
+                            <p style="margin:0; color: #e0e0e0; font-size: 13px;"><i class="fa-solid fa-hashtag"></i> {", ".join(map(str, point_ids))}</p>
+                        </div>
                     </div>
-                    <div style="font-size: 13px; color: #e0e0e0; margin-bottom: 5px;">
-                        <b>Các mã đơn:</b> #{id_strs} <span style="background:#4CAF50; color:white; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 5px;">{len(point_ids)} điểm giao</span>
-                    </div>
-                    <div style="font-size: 12px; color: #8b949e;">
-                        <i class="fa-solid fa-clock"></i> {time_str}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                c1, c2 = st.columns(2)
-                # Nút duyệt truyền vào danh sách các IDs
-                if c1.button("Duyệt Tuyến", key=f"app_{point_ids[0]}", use_container_width=True, type="primary"):
-                    if approve_cod_group(point_ids):
-                        get_pending_cod_orders.clear(); get_active_cod_orders.clear(); st.rerun()
-                if c2.button("Hủy Tuyến", key=f"rej_{point_ids[0]}", use_container_width=True):
-                    if reject_cod_group(point_ids):
-                        get_pending_cod_orders.clear(); st.rerun()
-                st.write("") # Margin bottom
+                """)
 
-    # ================== CỘT BẢN ĐỒ TỔNG QUAN ==================
-    with col_map:
-        st.markdown("### <i class='fa-solid fa-map-location-dot' style='color:#FF4B4B;'></i> Bản đồ tuyến Hỏa tốc chờ duyệt", unsafe_allow_html=True)
-        
-        center_loc = [18.6601, 105.6942] # Mặc định Vinh
-        if not df_pending.empty and df_pending.iloc[0]['pickup_lat'] is not None:
-            center_loc = [df_pending.iloc[0]['pickup_lat'], df_pending.iloc[0]['pickup_lon']]
-            
-        m_admin = folium.Map(location=center_loc, zoom_start=13, tiles="cartodbpositron")
-        
-        # Vẽ các tuyến đường chờ duyệt lên bản đồ (cũng vẽ theo nhóm cho đẹp)
-        if not df_pending.empty:
-            for (p_lat, p_lon, creator, t_grp), group in grouped_pending:
-                if pd.notna(p_lat) and pd.notna(p_lon):
-                    # Marker Điểm lấy
-                    folium.Marker([p_lat, p_lon], icon=folium.DivIcon(html=f'<div style="color:white; background:#FF9800; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 10px; z-index:900;">LẤY</div>'), tooltip=f"Lấy hàng - Khách: {creator}").add_to(m_admin)
-                    
-                    # Marker Điểm giao và Line
-                    for _, row in group.iterrows():
-                        d_lat, d_lon = row['lat'], row['lon']
-                        if pd.notna(d_lat) and pd.notna(d_lon):
-                            folium.Marker([d_lat, d_lon], icon=folium.Icon(color="green", icon="arrow-down", prefix="fa"), tooltip=f"Giao - Mã #{row['point_id']}").add_to(m_admin)
-                            folium.PolyLine(locations=[[p_lat, p_lon], [d_lat, d_lon]], color="#9C27B0", weight=3, opacity=0.6, dash_array="5").add_to(m_admin)
+                with cols[idx % 2]:
+                    st.markdown(card_html, unsafe_allow_html=True)
+                    btn_col1, btn_col2 = st.columns(2)
+                    if btn_col1.button("Duyệt Tuyến", key=f"ap_{point_ids[0]}", use_container_width=True, type="primary"):
+                        placeholders = ','.join(['?'] * len(point_ids))
+                        if execute_db_cod(f"UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE point_id IN ({placeholders})", point_ids):
+                            st.cache_data.clear(); st.rerun()
+                    if btn_col2.button("Hủy Tuyến", key=f"re_{point_ids[0]}", use_container_width=True):
+                        placeholders = ','.join(['?'] * len(point_ids))
+                        if execute_db_cod(f"UPDATE LogisticsPoints SET status = N'Đã hủy' WHERE point_id IN ({placeholders})", point_ids):
+                            st.cache_data.clear(); st.rerun()
+                idx += 1
 
-        st_folium(m_admin, width="100%", height=550, key="admin_cod_map", returned_objects=[])
+    with tab2:
+        st.markdown("### <i class='fa-solid fa-satellite-dish' style='color:#1E90FF;'></i> Giám sát đơn lẻ đang lưu thông", unsafe_allow_html=True)
+        if df_active.empty:
+            st.info("Hiện không có đơn lẻ nào đang hoạt động.")
+        else:
+            df_display = df_active[['point_id', 'created_by', 'status', 'lat', 'lon']].copy()
+            df_display.columns = ['Mã Đơn', 'Khách Hàng', 'Trạng Thái', 'Vĩ độ', 'Kinh độ']
+            def color_st(val):
+                return f'color: {"#FF9800" if val == "Chờ xử lý" else "#4CAF50"}; font-weight: bold;'
+            st.dataframe(df_display.style.applymap(color_st, subset=['Trạng Thái']), use_container_width=True, hide_index=True)

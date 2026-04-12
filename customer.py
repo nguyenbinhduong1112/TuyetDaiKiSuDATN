@@ -47,6 +47,24 @@ def get_user_fullname(username):
         return row[0] if row and row[0] else username
     except: return username
 
+# [ĐÃ NÂNG CẤP]: Hàm lấy các đơn hàng đang hoạt động của KH (Loại bỏ các đơn Từ chối, Hủy, Hoàn Thành)
+@st.cache_data(ttl=10)
+def get_customer_active_points(username):
+    try:
+        conn = pyodbc.connect(CONN_STR)
+        # Chỉ lấy đơn ở trạng thái: Chờ Admin duyệt (vừa tạo) hoặc Chờ xử lý (Admin đã duyệt, chờ ghép tuyến)
+        query = f"""
+            SELECT point_id, lat, lon, status 
+            FROM LogisticsPoints 
+            WHERE created_by = '{username}' 
+              AND order_type = N'chuỗi' 
+              AND status IN (N'Chờ Admin duyệt', N'Chờ xử lý')
+        """
+        df = pd.read_sql(query, conn)
+        conn.close()
+        return df
+    except: return pd.DataFrame()
+
 # ==========================================
 # HÀM RENDER ĐƯỢC GỌI TỪ MAIN.PY
 # ==========================================
@@ -115,7 +133,6 @@ def render_page():
         with st.popover(f"{user_fullname}", use_container_width=True):
             st.markdown(f"**<i class='fa-solid fa-user' style='color:#FF4B4B;'></i> Khách hàng:**<br><span style='color:#e0e0e0;'>{user_fullname}</span>", unsafe_allow_html=True)
             st.divider()
-            # [CHỈ FIX ĐÚNG ĐOẠN NÀY] - Xóa sạch rác trong RAM
             if st.button("Đăng xuất", use_container_width=True, type="primary"):
                 st.session_state.clear()
                 st.query_params.clear()
@@ -176,6 +193,7 @@ def render_page():
                 
                 if st.button("Tạo đơn vận chuyển mới", use_container_width=True, type="primary"):
                     st.session_state.last_created_id = None
+                    st.cache_data.clear() # Xóa cache để ép tải lại bản đồ ngay
                     st.rerun()
             
             else:
@@ -250,6 +268,7 @@ def render_page():
                                     st.session_state.temp_lat = None; st.session_state.temp_lon = None
                                     st.session_state.show_payment = False
                                     st.session_state.last_created_id = new_id 
+                                    st.cache_data.clear() # Đóng băng ép load lại map mới nhất
                                     st.rerun() 
                                 except Exception as e: st.error(f"Có lỗi xảy ra: {e}")
                         
@@ -264,20 +283,17 @@ def render_page():
             
             folium.Marker(location=wh_loc, icon=folium.DivIcon(html=f'<div style="color:white; background:#555; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 11px;">KHO</div>')).add_to(m_user)
             
-            try:
-                conn_map = pyodbc.connect(CONN_STR)
-                df_active = pd.read_sql(f"SELECT point_id, lat, lon, status FROM LogisticsPoints WHERE created_by = '{st.session_state.customer}' AND order_type = N'chuỗi' AND status != N'Đã hoàn thành'", conn_map)
-                conn_map.close()
-                if not df_active.empty:
-                    for _, row in df_active.iterrows():
-                        status_color = "#FFA500" if row['status'] == 'Chờ Admin duyệt' else "#28a745"
-                        status_label = "CHỜ" if row['status'] == 'Chờ Admin duyệt' else "ĐI"
-                        folium.Marker(
-                            location=[row['lat'], row['lon']],
-                            icon=folium.DivIcon(html=f'<div style="color:white; background:{status_color}; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 10px;">{status_label}</div>'),
-                            tooltip=f"Đơn #{row['point_id']} - {row['status']}"
-                        ).add_to(m_user)
-            except: pass
+            # [ĐÃ FIX LOGIC VẼ ĐƠN ACTIVE LÊN BẢN ĐỒ]
+            df_active = get_customer_active_points(st.session_state.customer)
+            if not df_active.empty:
+                for _, row in df_active.iterrows():
+                    status_color = "#FFA500" if row['status'] == 'Chờ Admin duyệt' else "#28a745"
+                    status_label = "CHỜ" if row['status'] == 'Chờ Admin duyệt' else "ĐI"
+                    folium.Marker(
+                        location=[row['lat'], row['lon']],
+                        icon=folium.DivIcon(html=f'<div style="color:white; background:{status_color}; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 10px;">{status_label}</div>'),
+                        tooltip=f"Đơn #{row['point_id']} - {row['status']}"
+                    ).add_to(m_user)
 
             if st.session_state.temp_lat and st.session_state.temp_lon:
                 folium.Marker(
