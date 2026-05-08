@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import folium
+from folium.plugins import AntPath
 from streamlit_folium import st_folium
 import pyodbc
 import math
@@ -8,12 +9,35 @@ import os
 import torch
 import numpy as np
 import urllib.parse
+import requests  # THÊM THƯ VIỆN ĐỂ GỌI API BẢN ĐỒ
 from config import CONN_STR
 
 # --- IMPORT THUẬT TOÁN AI (GIỐNG HỆT DRIVER.PY) ---
 from model import PointerNet
 from map_utils import MapManager
 from engine import solve_delivery_route
+
+# --- HÀM GỌI API OSRM ĐỂ VẼ ĐƯỜNG BÁM SÁT THỰC TẾ ---
+def get_osrm_route(locations, route_indices):
+    try:
+        ordered_locs = [locations[i] for i in route_indices]
+        ordered_locs.append(locations[route_indices[0]]) # Nối khép vòng
+        
+        # OSRM yêu cầu định dạng: lon,lat;lon,lat...
+        coords_str = ";".join([f"{lon},{lat}" for lat, lon in ordered_locs])
+        
+        url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        if data.get("code") == "Ok":
+            # OSRM trả về tọa độ [lon, lat], đảo lại thành [lat, lon] cho Folium
+            route_coords = [[coord[1], coord[0]] for coord in data["routes"][0]["geometry"]["coordinates"]]
+            return route_coords
+        return None
+    except Exception as e:
+        print(f"Lỗi API OSRM: {e}")
+        return None
 
 # --- LOAD AI MODEL VÀO RAM ---
 @st.cache_resource
@@ -126,12 +150,24 @@ def render_cod_page(driver_fullname):
             
             if len(locations) > 2 and not st.session_state.cod_route_indices:
                 if st.button("Kích hoạt tối ưu AI", type="primary", use_container_width=True):
-                    with st.status("AI đang phân tích lộ trình...", expanded=False):
+                    with st.status("AI đang xử lý lộ trình bám đường...", expanded=False):
+                        st.write("Đang giải bài toán TSP...")
                         coords_tensor = torch.FloatTensor(locations)
                         st.session_state.cod_route_indices = solve_delivery_route(model, coords_tensor)
-                        node_ids = map_mgr.get_nearest_nodes(locations)
-                        ordered_nodes = [node_ids[i] for i in st.session_state.cod_route_indices]
-                        st.session_state.cod_actual_path = map_mgr.get_route_coords(ordered_nodes)
+                        
+                        st.write("Đang lấy dữ liệu bản đồ giao thông thực tế...")
+                        # Dùng numpy array để tránh lỗi TypeError khi query map
+                        node_ids = map_mgr.get_nearest_nodes(np.array(locations)) 
+                        
+                        # Gọi OSRM lấy đường thực tế
+                        actual_route = get_osrm_route(locations, st.session_state.cod_route_indices)
+                        
+                        if actual_route:
+                            st.session_state.cod_actual_path = actual_route
+                        else:
+                            # Phương án dự phòng nếu API đứt mạng (Vẽ đường thẳng theo node)
+                            ordered_nodes = [node_ids[i] for i in st.session_state.cod_route_indices]
+                            st.session_state.cod_actual_path = map_mgr.get_route_coords(ordered_nodes)
                     st.rerun()
             
             if my_active_order.iloc[0]['delivery_status'] == "Đang chờ duyệt":
@@ -156,7 +192,6 @@ def render_cod_page(driver_fullname):
                 if st.button("Làm mới danh sách", use_container_width=True):
                     get_available_cod_orders.clear(); st.rerun()
             else:
-                # Gom nhóm theo group_id
                 avail_orders['group_id'] = avail_orders['group_id'].fillna(avail_orders['point_id'].astype(str))
                 trip_groups = avail_orders.groupby('group_id')
                 options = {}
@@ -207,8 +242,10 @@ def render_cod_page(driver_fullname):
                     color = "#FF9800" if loc_idx == 0 else "#1E90FF"
                     label = "LẤY" if loc_idx == 0 else str(i)
                     folium.Marker([p[0], p[1]], icon=folium.DivIcon(html=f'<div style="color:white; background:{color}; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 13px; z-index:1000;">{label}</div>')).add_to(m_cod)
-                if st.session_state.cod_actual_path: 
-                    folium.PolyLine(locations=st.session_state.cod_actual_path, color="#FF0000", weight=6, opacity=0.8).add_to(m_cod)
+                
+                # --- VẼ ĐƯỜNG KIẾN BÒ (ANTPATH) TỪ DỮ LIỆU ĐÃ TỐI ƯU (CÓ API OSRM) ---
+                if st.session_state.cod_actual_path and len(st.session_state.cod_actual_path) > 1: 
+                    AntPath(locations=st.session_state.cod_actual_path, color="#1976D2", weight=5, dash_array=[15, 20], delay=800, tooltip="Lộ trình di chuyển bám đường nhựa").add_to(m_cod)
             else:
                 folium.Marker(pickup, icon=folium.DivIcon(html=f'<div style="color:white; background:#FF9800; border-radius:50%; width:35px; height:35px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 11px; z-index:1000;">LẤY</div>')).add_to(m_cod)
                 for i, d in enumerate(dropoffs):
@@ -250,17 +287,14 @@ def render_cod_page(driver_fullname):
         route_pts_url = ["My+Location"]
         
         if st.session_state.cod_route_indices:
-            # Nếu có tối ưu AI, thêm các điểm theo đúng thứ tự (Bao gồm điểm Lấy và các điểm Giao)
             for i in st.session_state.cod_route_indices:
                 p = locations[i]
                 route_pts_url.append(f"{p[0]},{p[1]}")
         else:
-            # Nếu không tối ưu, đi từ My Location -> Pickup -> Các điểm Giao mặc định
             route_pts_url.append(f"{pickup[0]},{pickup[1]}")
             for d in dropoffs:
                 route_pts_url.append(f"{d[0]},{d[1]}")
                 
-        # Link chuẩn của Google Maps Directions
         gmaps_url = "https://www.google.com/maps/dir/" + "/".join(route_pts_url)
         
         with col_info:
@@ -274,7 +308,6 @@ def render_cod_page(driver_fullname):
         
         with col_qr:
             qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=500x500&data={urllib.parse.quote(gmaps_url)}"
-            # VIẾT HTML TRÊN 1 DÒNG ĐỂ Streamlit KHÔNG COI LÀ MARKDOWN CODE BLOCK
             html_qr = (
                 '<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #1A1C24; padding: 20px; border-radius: 10px; border: 1px solid #333;">'
                 '<div style="color: #e0e0e0; font-size: 15px; font-weight: bold; margin-bottom: 12px;"><i class="fa-solid fa-qrcode" style="color:#FF4B4B;"></i> QR Quét lộ trình</div>'

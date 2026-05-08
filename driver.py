@@ -14,6 +14,7 @@ import base64
 import math
 import random
 import pyodbc
+import requests  # THÊM THƯ VIỆN NÀY ĐỂ GỌI API BẢN ĐỒ
 from config import CONN_STR
 
 # --- TỐI ƯU CỐT LÕI: HÀM GỌI DATABASE CHUNG ---
@@ -28,6 +29,30 @@ def execute_db(query, params=()):
     except Exception as e:
         st.error(f"Lỗi truy vấn Database: {e}")
         return False
+
+# --- HÀM GỌI API OSRM ĐỂ VẼ ĐƯỜNG BÁM SÁT THỰC TẾ ---
+def get_osrm_route(locations, route_indices):
+    try:
+        # Lấy danh sách tọa độ đã sắp xếp theo AI (route_indices)
+        ordered_locs = [locations[i] for i in route_indices]
+        ordered_locs.append(locations[route_indices[0]]) # Nối về kho để tạo vòng khép kín
+        
+        # OSRM yêu cầu định dạng: lon,lat;lon,lat...
+        coords_str = ";".join([f"{lon},{lat}" for lat, lon in ordered_locs])
+        
+        # Gọi API OSRM (Sử dụng server public miễn phí)
+        url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
+        response = requests.get(url, timeout=10)
+        data = response.json()
+        
+        if data.get("code") == "Ok":
+            # OSRM trả về tọa độ dạng [lon, lat], ta phải đảo lại thành [lat, lon] cho Folium
+            route_coords = [[coord[1], coord[0]] for coord in data["routes"][0]["geometry"]["coordinates"]]
+            return route_coords
+        return None
+    except Exception as e:
+        print(f"Lỗi API OSRM: {e}")
+        return None
 
 # --- CÁC HÀM XỬ LÝ LOGIC & CACHE (ĐƠN CHUỖI) ---
 def calculate_route_distance(locations, route_indices):
@@ -54,7 +79,6 @@ def fetch_real_data():
         df_kho = pd.read_sql("SELECT lat, lon FROM WarehouseConfig WHERE id = 1", conn)
         kho = [df_kho.iloc[0]['lat'], df_kho.iloc[0]['lon']] if not df_kho.empty else [18.6601, 105.6942]
         
-        # ẨN CÁC ĐƠN ĐÃ BẤM HOÀN THÀNH KHỎI BẢN ĐỒ TÀI XẾ
         query = "SELECT lat, lon FROM LogisticsPoints WHERE status = N'Chờ xử lý' AND ISNULL(delivery_status, '') != N'Đang chờ duyệt' AND order_type = N'chuỗi'"
         df_pts = pd.read_sql(query, conn)
         conn.close()
@@ -199,7 +223,6 @@ def render_page():
 
             pending_count = get_pending_count() 
 
-            # Ưu tiên 1: Có đơn trên Map -> Cho phép bấm xác nhận hoàn thành
             if len(st.session_state.locations) > 1:
                 if st.button("Xác nhận đã hoàn thành đơn", use_container_width=True, type="primary"):
                     if execute_db("UPDATE LogisticsPoints SET delivery_status = N'Đang chờ duyệt', driver_id = ? WHERE status = N'Chờ xử lý' AND ISNULL(delivery_status, '') != N'Đang chờ duyệt' AND order_type = N'chuỗi'", (driver_user,)):
@@ -208,10 +231,8 @@ def render_page():
                         st.session_state.locations, _ = fetch_real_data() 
                         st.success("Đã gửi yêu cầu lên Admin!")
                         st.rerun()
-            # Ưu tiên 2: Map trống, nhưng đang có đơn kẹt ở Admin
             elif pending_count > 0: 
                 st.button("Đang chờ Admin duyệt hoàn thành...", disabled=True, use_container_width=True)
-            # Ưu tiên 3: Map trống, cũng không kẹt đơn nào
             else:
                 st.button("Đã hoàn thành tất cả", disabled=True, use_container_width=True)
 
@@ -221,12 +242,22 @@ def render_page():
             else:
                 st.markdown(f"""<div style="margin-bottom: 10px;"><span style="color: #e0e0e0; font-size: 15px;"><i class="fa-solid fa-box-open" style="color:#FF4B4B;"></i> Đơn hàng hiện tại: <b style="color: white;">{len(st.session_state.locations) - 1}</b></span></div>""", unsafe_allow_html=True)
                 if st.button("Kích hoạt tối ưu lộ trình AI", type="primary", use_container_width=True):
-                    with st.status("AI đang xử lý...", expanded=False):
+                    # --- NÂNG CẤP VẼ ĐƯỜNG VỚI API OSRM ---
+                    with st.status("AI đang xử lý lộ trình tối ưu...", expanded=False):
+                        st.write("Đang giải bài toán TSP...")
                         coords_tensor = torch.FloatTensor(st.session_state.locations)
                         st.session_state.route_indices = solve_delivery_route(model, coords_tensor)
-                        node_ids = map_mgr.get_nearest_nodes(st.session_state.locations)
-                        ordered_nodes = [node_ids[i] for i in st.session_state.route_indices]
-                        st.session_state.actual_path = map_mgr.get_route_coords(ordered_nodes)
+                        
+                        st.write("Đang lấy dữ liệu bản đồ giao thông thực tế...")
+                        actual_route = get_osrm_route(st.session_state.locations, st.session_state.route_indices)
+                        
+                        if actual_route:
+                            st.session_state.actual_path = actual_route
+                        else:
+                            # Backup vector đường thẳng nếu API đứt mạng
+                            ordered_pts = [st.session_state.locations[i].tolist() for i in st.session_state.route_indices]
+                            ordered_pts.append(st.session_state.locations[st.session_state.route_indices[0]].tolist())
+                            st.session_state.actual_path = ordered_pts
                     st.rerun()
 
         with col_map:
@@ -237,14 +268,10 @@ def render_page():
                 label = "KHO" if i == 0 else (f"{st.session_state.route_indices.index(i)}" if st.session_state.route_indices else "?")
                 folium.Marker(location=[p[0], p[1]], icon=folium.DivIcon(html=f'<div style="color:white; background:{color}; border-radius:50%; width:30px; height:30px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-size: 13px;">{label}</div>')).add_to(m)
             
-            if st.session_state.route_indices and len(st.session_state.route_indices) > 1:
-                ordered_pts = [st.session_state.locations[i].tolist() for i in st.session_state.route_indices]
-                ordered_pts.append(st.session_state.locations[st.session_state.route_indices[0]].tolist()) 
-                AntPath(locations=ordered_pts, color="#1976D2", weight=4, dash_array=[15, 20], delay=800, tooltip="Vector Tuyến Giao Hàng").add_to(m)
+            # --- VẼ ĐƯỜNG KIẾN BÒ (ANTPATH) TỪ DỮ LIỆU ĐÃ TỐI ƯU ---
+            if st.session_state.actual_path and len(st.session_state.actual_path) > 1:
+                AntPath(locations=st.session_state.actual_path, color="#1976D2", weight=5, dash_array=[15, 20], delay=800, tooltip="Lộ trình di chuyển bám đường nhựa").add_to(m)
 
-            if st.session_state.actual_path: 
-                folium.PolyLine(locations=st.session_state.actual_path, color="#FF0000", weight=6, opacity=0.8).add_to(m)
-            
             if st.session_state.driver_loc and st.session_state.driver_status != "Ngoại tuyến":
                 folium.Marker(location=st.session_state.driver_loc, icon=folium.Icon(color="green", icon="truck", prefix="fa"), tooltip=f"Tài xế: {driver_fullname}").add_to(m)
             st_folium(m, width="100%", height=550, key=f"driver_map_stable", returned_objects=[])
