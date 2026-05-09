@@ -50,7 +50,7 @@ def main():
     st.set_page_config(
         layout="wide", 
         page_title=dynamic_title, 
-        page_icon=os.path.join("img", "4D5185D2-0AD7-49AC-B7B2-4E94C13DB13C.png")
+        page_icon=os.path.join("img", "favicon_optimized.png")
     )
 
     # Xả cái lỗi lúc nãy ra màn hình (nếu có) sau khi UI đã được khởi tạo an toàn

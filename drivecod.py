@@ -4,30 +4,34 @@ import folium
 from folium.plugins import AntPath
 from streamlit_folium import st_folium
 import pyodbc
-import math
-import os
-import torch
 import numpy as np
 import urllib.parse
 import requests  # THÊM THƯ VIỆN ĐỂ GỌI API BẢN ĐỒ
 from config import CONN_STR
 
 # --- IMPORT THUẬT TOÁN AI (GIỐNG HỆT DRIVER.PY) ---
-from model import PointerNet
-from map_utils import MapManager
-from engine import solve_delivery_route
+from route_optimizer import route_distance_km, solve_delivery_route
 
 # --- HÀM GỌI API OSRM ĐỂ VẼ ĐƯỜNG BÁM SÁT THỰC TẾ ---
 def get_osrm_route(locations, route_indices):
+    ordered_locs = []
+    indices = list(route_indices)
+    if indices and indices[-1] != indices[0]:
+        indices.append(indices[0])
+    for i in indices:
+        lat, lon = locations[i]
+        ordered_locs.append((round(float(lat), 6), round(float(lon), 6)))
+    return get_osrm_route_cached(tuple(ordered_locs))
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_osrm_route_cached(ordered_locs):
     try:
-        ordered_locs = [locations[i] for i in route_indices]
-        ordered_locs.append(locations[route_indices[0]]) # Nối khép vòng
-        
         # OSRM yêu cầu định dạng: lon,lat;lon,lat...
         coords_str = ";".join([f"{lon},{lat}" for lat, lon in ordered_locs])
         
-        url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
-        response = requests.get(url, timeout=10)
+        url = f"https://router.project-osrm.org/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
         data = response.json()
         
         if data.get("code") == "Ok":
@@ -39,27 +43,10 @@ def get_osrm_route(locations, route_indices):
         print(f"Lỗi API OSRM: {e}")
         return None
 
-# --- LOAD AI MODEL VÀO RAM ---
 @st.cache_resource
-def load_all_cod():
-    model = PointerNet()
-    if os.path.exists('weights.pth'): 
-        model.load_state_dict(torch.load('weights.pth', map_location='cpu'))
-    model.eval()
-    return model, MapManager()
-
-# --- HÀM TÍNH KHOẢNG CÁCH (Tuyến đường) ---
-def calculate_route_distance(locations, route_indices=None):
-    if not route_indices:
-        route_indices = list(range(len(locations)))
-    if len(route_indices) < 2: return 0.0
-    R, total_dist = 6371.0, 0.0
-    for i in range(len(route_indices) - 1):
-        p1, p2 = locations[route_indices[i]], locations[route_indices[i+1]]
-        lat1, lon1, lat2, lon2 = map(math.radians, [p1[0], p1[1], p2[0], p2[1]])
-        a = math.sin((lat2-lat1)/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin((lon2-lon1)/2)**2
-        total_dist += R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
-    return total_dist * 1.3 
+def load_map_manager_cod():
+    from map_utils import MapManager
+    return MapManager()
 
 # --- LẤY DỮ LIỆU ĐƠN COD ---
 @st.cache_data(ttl=15)
@@ -69,7 +56,7 @@ def get_available_cod_orders():
         query = """
             SELECT point_id, pickup_lat, pickup_lon, lat, lon, created_by, created_at, group_id
             FROM LogisticsPoints 
-            WHERE status = N'Chờ xử lý' AND order_type = N'lẻ'
+            WHERE status = N'Chờ xử lý' AND order_type = N'lẻ' AND driver_id IS NULL
         """
         df = pd.read_sql(query, conn)
         conn.close()
@@ -81,12 +68,12 @@ def get_available_cod_orders():
 def get_my_active_cod_order(driver_username):
     try:
         conn = pyodbc.connect(CONN_STR)
-        query = f"""
-            SELECT point_id, pickup_lat, pickup_lon, lat, lon, created_by, delivery_status, group_id
+        query = """
+            SELECT point_id, pickup_lat, pickup_lon, lat, lon, created_by, delivery_status, group_id, driver_id
             FROM LogisticsPoints 
-            WHERE status = N'Đang giao' AND order_type = N'lẻ' 
+            WHERE status = N'Đang giao' AND order_type = N'lẻ' AND driver_id = ?
         """
-        df = pd.read_sql(query, conn)
+        df = pd.read_sql(query, conn, params=[driver_username])
         conn.close()
         return df
     except: return pd.DataFrame()
@@ -96,10 +83,18 @@ def assign_cod_group_to_driver(point_ids, driver_username):
     try:
         conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
         placeholders = ','.join(['?'] * len(point_ids))
-        sql = f"UPDATE LogisticsPoints SET status = N'Đang giao' WHERE point_id IN ({placeholders})"
-        cursor.execute(sql, point_ids)
+        sql = f"""
+            UPDATE LogisticsPoints
+            SET status = N'Đang giao', driver_id = ?
+            WHERE point_id IN ({placeholders})
+              AND status = N'Chờ xử lý'
+              AND order_type = N'lẻ'
+              AND driver_id IS NULL
+        """
+        cursor.execute(sql, [driver_username] + list(point_ids))
+        updated = cursor.rowcount
         conn.commit(); conn.close()
-        return True
+        return updated == len(point_ids)
     except: return False
 
 def complete_cod_group(point_ids):
@@ -122,7 +117,6 @@ def render_cod_page(driver_fullname):
     driver_user = st.session_state.get("customer", "")
     my_active_order = get_my_active_cod_order(driver_user)
     
-    model, map_mgr = load_all_cod()
     col_map, col_ctrl = st.columns([3, 1])
     
     with col_ctrl:
@@ -135,9 +129,9 @@ def render_cod_page(driver_fullname):
             point_ids = my_active_order['point_id'].tolist()
             
             if st.session_state.cod_route_indices:
-                dist_km = calculate_route_distance(locations, st.session_state.cod_route_indices)
+                dist_km = route_distance_km(locations, st.session_state.cod_route_indices)
             else:
-                dist_km = calculate_route_distance(locations)
+                dist_km = route_distance_km(locations)
 
             st.markdown(f"""
             <div style="background-color: rgba(156, 39, 176, 0.15); border-left: 4px solid #9C27B0; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
@@ -152,13 +146,9 @@ def render_cod_page(driver_fullname):
                 if st.button("Kích hoạt tối ưu AI", type="primary", use_container_width=True):
                     with st.status("AI đang xử lý lộ trình bám đường...", expanded=False):
                         st.write("Đang giải bài toán TSP...")
-                        coords_tensor = torch.FloatTensor(locations)
-                        st.session_state.cod_route_indices = solve_delivery_route(model, coords_tensor)
+                        st.session_state.cod_route_indices = solve_delivery_route(locations, close_loop=True)
                         
                         st.write("Đang lấy dữ liệu bản đồ giao thông thực tế...")
-                        # Dùng numpy array để tránh lỗi TypeError khi query map
-                        node_ids = map_mgr.get_nearest_nodes(np.array(locations)) 
-                        
                         # Gọi OSRM lấy đường thực tế
                         actual_route = get_osrm_route(locations, st.session_state.cod_route_indices)
                         
@@ -166,6 +156,8 @@ def render_cod_page(driver_fullname):
                             st.session_state.cod_actual_path = actual_route
                         else:
                             # Phương án dự phòng nếu API đứt mạng (Vẽ đường thẳng theo node)
+                            map_mgr = load_map_manager_cod()
+                            node_ids = map_mgr.get_nearest_nodes(np.array(locations))
                             ordered_nodes = [node_ids[i] for i in st.session_state.cod_route_indices]
                             st.session_state.cod_actual_path = map_mgr.get_route_coords(ordered_nodes)
                     st.rerun()
@@ -299,7 +291,7 @@ def render_cod_page(driver_fullname):
         
         with col_info:
             m1, m2, m3 = st.columns([1.2, 1, 1])
-            dist = calculate_route_distance(locations, st.session_state.cod_route_indices)
+            dist = route_distance_km(locations, st.session_state.cod_route_indices)
             m1.metric("Trạng thái", "Đã Tối Ưu" if st.session_state.cod_route_indices else "Mặc định")
             m2.metric("Quãng đường", f"{dist:.2f} km")
             m3.metric("Điểm giao", f"{len(dropoffs)} điểm")

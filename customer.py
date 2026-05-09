@@ -53,25 +53,30 @@ def get_customer_active_points(username):
     try:
         conn = pyodbc.connect(CONN_STR)
         # Chỉ lấy đơn ở trạng thái: Chờ Admin duyệt (vừa tạo) hoặc Chờ xử lý (Admin đã duyệt, chờ ghép tuyến)
-        query = f"""
+        query = """
             SELECT point_id, lat, lon, status 
             FROM LogisticsPoints 
-            WHERE created_by = '{username}' 
+            WHERE created_by = ?
               AND order_type = N'chuỗi' 
               AND status IN (N'Chờ Admin duyệt', N'Chờ xử lý')
         """
-        df = pd.read_sql(query, conn)
+        df = pd.read_sql(query, conn, params=[username])
         conn.close()
         return df
     except: return pd.DataFrame()
+
+def clear_customer_caches():
+    get_warehouse_loc.clear()
+    get_user_fullname.clear()
+    get_customer_active_points.clear()
 
 # ==========================================
 # HÀM RENDER ĐƯỢC GỌI TỪ MAIN.PY
 # ==========================================
 def render_page():
     # ĐỌC ẢNH LOGO VÀ BACKGROUND TỪ ĐẦU ĐỂ NHÚNG VÀO CSS
-    bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
-    logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png"))
+    bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "watermark_optimized.webp"))
+    logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "logo_optimized.webp"))
 
     # CHÈN CSS ĐỒNG BỘ UI VÀ NHÚNG ICON VÀO NÚT LÀM MỚI BẰNG FONTAWESOME
     st.markdown(f"""
@@ -108,7 +113,7 @@ def render_page():
         div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; z-index: 2; position: relative; }}
         button[kind="primary"] {{ background-color: #FF4B4B !important; border-color: #FF4B4B !important; transition: all 0.3s ease-in-out !important; }}
         button[kind="primary"]:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; color: white !important; }}
-        .bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}
+        .bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/webp;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}
     </style>
     <div class="bg-watermark"></div>
     """, unsafe_allow_html=True)
@@ -119,7 +124,6 @@ def render_page():
         st.stop()
 
     user_fullname = get_user_fullname(st.session_state.customer)
-    wh_loc = get_warehouse_loc()
 
     # KHỞI TẠO CÁC BIẾN STATE
     if 'temp_lat' not in st.session_state: st.session_state.temp_lat = None
@@ -142,7 +146,7 @@ def render_page():
     # SIDEBAR MENU
     # ==========================================
     if logo_head_b64:
-        logo_sidebar_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
+        logo_sidebar_html = f'<img src="data:image/webp;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
     else:
         logo_sidebar_html = '<i class="fa-solid fa-box" style="font-size: 30px; margin-right: 12px; color: white; z-index: 2; position: relative;"></i>'
 
@@ -150,7 +154,7 @@ def render_page():
         st.markdown(f"<div style='display: flex; align-items: center; margin-bottom: 20px;'>{logo_sidebar_html}<h3 style='color: white; margin: 0; font-weight: bold;'>Dịch vụ vận tải</h3></div>", unsafe_allow_html=True)
         
         if st.button("LÀM MỚI DỮ LIỆU", use_container_width=True):
-            st.cache_data.clear()
+            clear_customer_caches()
             st.rerun()
             
         st.markdown("<hr style='margin: 10px 0; border-color: #333;'>", unsafe_allow_html=True)
@@ -158,7 +162,7 @@ def render_page():
         menu_selection = st.radio("Điều hướng", ["Đặt đơn hàng", "Đặt đơn COD (Lẻ)", "Lịch sử đơn hàng", "Quản lý thông tin cá nhân"], label_visibility="collapsed")
         
         st.markdown("<div style='flex-grow: 1; height: 35vh;'></div>", unsafe_allow_html=True)
-        st.markdown(f"""<div style="text-align: center; padding: 20px 0; border-top: 1px solid #333; margin-top: auto;"><img src="data:image/png;base64,{bg_img_b64}" style="width: 140px; opacity: 0.15; filter: grayscale(100%);"><p style="color: #8b949e; font-size: 13px; margin-top: 15px; font-weight: bold; letter-spacing: 1px;">UMBRELLA CUSTOMER APP</p><p style="color: #444; font-size: 11px; margin-top: -10px;">Vinh City Supply Chain © 2026</p></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="text-align: center; padding: 20px 0; border-top: 1px solid #333; margin-top: auto;"><img src="data:image/webp;base64,{bg_img_b64}" style="width: 140px; opacity: 0.15; filter: grayscale(100%);"><p style="color: #8b949e; font-size: 13px; margin-top: 15px; font-weight: bold; letter-spacing: 1px;">UMBRELLA CUSTOMER APP</p><p style="color: #444; font-size: 11px; margin-top: -10px;">Vinh City Supply Chain © 2026</p></div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:-50px;'></div>", unsafe_allow_html=True)
 
@@ -170,6 +174,8 @@ def render_page():
     # 1. ĐẶT ĐƠN HÀNG CHUỖI
     # ---------------------------------------------------------
     if menu_selection == "Đặt đơn hàng":
+        wh_loc = get_warehouse_loc()
+
         st.markdown(f"""
             <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
                 <i class="fa-solid fa-cart-shopping" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
@@ -193,7 +199,7 @@ def render_page():
                 
                 if st.button("Tạo đơn vận chuyển mới", use_container_width=True, type="primary"):
                     st.session_state.last_created_id = None
-                    st.cache_data.clear() # Xóa cache để ép tải lại bản đồ ngay
+                    clear_customer_caches() # Xóa cache liên quan để ép tải lại bản đồ ngay
                     st.rerun()
             
             else:
@@ -268,7 +274,7 @@ def render_page():
                                     st.session_state.temp_lat = None; st.session_state.temp_lon = None
                                     st.session_state.show_payment = False
                                     st.session_state.last_created_id = new_id 
-                                    st.cache_data.clear() # Đóng băng ép load lại map mới nhất
+                                    clear_customer_caches() # Ép load lại map mới nhất
                                     st.rerun() 
                                 except Exception as e: st.error(f"Có lỗi xảy ra: {e}")
                         

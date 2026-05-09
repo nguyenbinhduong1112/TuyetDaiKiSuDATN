@@ -72,8 +72,8 @@ def render_page():
     if "customer" not in st.session_state: st.session_state.customer = None
 
     # --- ĐỌC ẢNH LOGO VÀ BACKGROUND ---
-    bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
-    logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png"))
+    bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "watermark_optimized.webp"))
+    logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "logo_optimized.webp"))
 
     # ==========================================
     # CSS SIÊU CẤP ĐỘ LẠI STREAMLIT UI
@@ -87,7 +87,7 @@ def render_page():
         .bg-watermark {{
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             width: 850px; height: 850px;
-            background-image: url('data:image/png;base64,{bg_img_b64}');
+            background-image: url('data:image/webp;base64,{bg_img_b64}');
             background-size: contain; background-position: center; background-repeat: no-repeat;
             opacity: 0.08; z-index: 0; pointer-events: none;
             filter: grayscale(100%);
@@ -220,7 +220,7 @@ def render_page():
                 # Hero Header mượt mà
                 st.markdown(f"""
                     <div class="premium-header">
-                        <img src="data:image/png;base64,{logo_head_b64}" alt="Umbrella Logo">
+                        <img src="data:image/webp;base64,{logo_head_b64}" alt="Umbrella Logo">
                         <h1>UMBRELLA LOGISTICS</h1>
                         <p>Hệ thống Quản trị Chuỗi Cung ứng Vinh City</p>
                     </div>
@@ -262,8 +262,6 @@ def render_page():
                                         # Ném lên URL
                                         st.query_params["token"] = encoded_token
                                         
-                                        # XÓA SẠCH GIAO DIỆN CŨ TRƯỚC KHI RERUN (Diệt Bóng ma)
-                                        login_placeholder.empty()
                                         st.rerun()
                                     else: 
                                         st.error("Thông tin đăng nhập không chính xác!")

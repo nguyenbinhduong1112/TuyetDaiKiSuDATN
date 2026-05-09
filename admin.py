@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import pyodbc
 import folium
+from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 import base64
 import random
@@ -28,7 +29,7 @@ def execute_action(query, params=(), success_msg=None):
         cursor.execute(query, params)
         conn.commit()
         conn.close()
-        st.cache_data.clear()
+        clear_admin_caches()
         if 'temp_admin_click' in st.session_state: 
             del st.session_state.temp_admin_click
         if success_msg: st.success(success_msg)
@@ -51,10 +52,19 @@ def get_active_points():
     try:
         conn = pyodbc.connect(CONN_STR)
         # [ĐÃ SỬA]: Lấy thêm cột delivery_status để Map biết đường đổi màu
-        df = pd.read_sql("SELECT point_id, lat, lon, customer_name, ISNULL(created_by, 'admin') as created_by, ISNULL(created_at, GETDATE()) as created_at, ISNULL(delivery_status, '') as delivery_status FROM LogisticsPoints WHERE status = N'Chờ xử lý' AND ISNULL(order_type, '') != N'lẻ'", conn)
+        df = pd.read_sql("SELECT TOP (300) point_id, lat, lon, customer_name, ISNULL(created_by, 'admin') as created_by, ISNULL(created_at, GETDATE()) as created_at, ISNULL(delivery_status, '') as delivery_status FROM LogisticsPoints WHERE status = N'Chờ xử lý' AND order_type = N'chuỗi' ORDER BY created_at DESC", conn)
         conn.close()
         return df
     except: return pd.DataFrame()
+
+@st.cache_data(ttl=15)
+def get_active_points_count():
+    try:
+        conn = pyodbc.connect(CONN_STR)
+        count = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE status = N'Chờ xử lý' AND order_type = N'chuỗi'", conn).iloc[0, 0]
+        conn.close()
+        return int(count)
+    except: return 0
 
 @st.cache_data(ttl=30) 
 def get_all_users():
@@ -67,19 +77,49 @@ def get_all_users():
         return df
     except: return pd.DataFrame()
 
+@st.cache_data(ttl=300)
+def get_admin_fullname(username):
+    try:
+        conn = pyodbc.connect(CONN_STR)
+        cursor = conn.cursor()
+        cursor.execute("SELECT ISNULL(fullname, username) FROM userstable WHERE username = ?", (username,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else username
+    except:
+        return username
+
 @st.cache_data(ttl=15)
 def get_pending_orders():
     try:
         conn = pyodbc.connect(CONN_STR)
-        c_driver = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE delivery_status = N'Đang chờ duyệt' AND ISNULL(order_type, '') != N'lẻ'", conn).iloc[0,0]
-        c_user = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'", conn).iloc[0,0]
-        
-        c_cod_driver = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE delivery_status = N'Đang chờ duyệt' AND order_type = N'lẻ'", conn).iloc[0,0]
-        c_cod_user = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE status = N'Chờ Admin duyệt' AND order_type = N'lẻ'", conn).iloc[0,0]
-        
+        query = """
+            SELECT
+                SUM(CASE WHEN delivery_status = N'Đang chờ duyệt' AND order_type = N'chuỗi' THEN 1 ELSE 0 END) AS chain_driver_done,
+                SUM(CASE WHEN status = N'Chờ Admin duyệt' AND order_type = N'chuỗi' THEN 1 ELSE 0 END) AS chain_user_create,
+                SUM(CASE WHEN delivery_status = N'Đang chờ duyệt' AND order_type = N'lẻ' THEN 1 ELSE 0 END) AS cod_driver_done,
+                SUM(CASE WHEN status = N'Chờ Admin duyệt' AND order_type = N'lẻ' THEN 1 ELSE 0 END) AS cod_user_create
+            FROM LogisticsPoints
+            WHERE status = N'Chờ Admin duyệt'
+               OR delivery_status = N'Đang chờ duyệt'
+        """
+        row = pd.read_sql(query, conn).iloc[0]
         conn.close()
-        return c_driver, c_user, c_cod_driver, c_cod_user
+        return (
+            0 if pd.isna(row["chain_driver_done"]) else int(row["chain_driver_done"]),
+            0 if pd.isna(row["chain_user_create"]) else int(row["chain_user_create"]),
+            0 if pd.isna(row["cod_driver_done"]) else int(row["cod_driver_done"]),
+            0 if pd.isna(row["cod_user_create"]) else int(row["cod_user_create"]),
+        )
     except: return 0, 0, 0, 0
+
+def clear_admin_caches():
+    get_warehouse_loc.clear()
+    get_active_points.clear()
+    get_active_points_count.clear()
+    get_all_users.clear()
+    get_admin_fullname.clear()
+    get_pending_orders.clear()
 
 # ==========================================
 # HÀM RENDER ĐƯỢC GỌI TỪ MAIN.PY
@@ -89,19 +129,15 @@ def render_page():
         st.warning("Vui lòng đăng nhập bằng tài khoản Quản trị viên!")
         st.stop()
 
-    bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
-    logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png"))
+    bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "watermark_optimized.webp"))
+    logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "logo_optimized.webp"))
 
-    st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; }}.stDataFrame {{ border-radius: 8px; border: 1px solid #333; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f279'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f0e7'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f1da'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(5) p::before {{ content: '\\f091'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(6) p::before {{ content: '\\f0c0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}div[data-testid="stPopover"] > button {{ background-color: #1A1C24 !important; color: white !important; border: 1px solid #333 !important; opacity: 1 !important; }}div[data-testid="stPopover"] > button:hover {{ background-color: #21262d !important; border-color: #FF4B4B !important; }}[data-testid="stSidebar"] .stButton > button {{ border-radius: 8px; font-weight: 700; text-transform: uppercase; font-size: 14px; letter-spacing: 1px; transition: all 0.2s; }}[data-testid="stSidebar"] .stButton > button p::before {{ content: '\\f2f9'; font-family: 'Font Awesome 6 Free'; font-weight: 900; margin-right: 8px; font-size: 16px; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; }}.stDataFrame {{ border-radius: 8px; border: 1px solid #333; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f279'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f0e7'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f1da'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(5) p::before {{ content: '\\f091'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(6) p::before {{ content: '\\f0c0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}div[data-testid="stPopover"] > button {{ background-color: #1A1C24 !important; color: white !important; border: 1px solid #333 !important; opacity: 1 !important; }}div[data-testid="stPopover"] > button:hover {{ background-color: #21262d !important; border-color: #FF4B4B !important; }}[data-testid="stSidebar"] .stButton > button {{ border-radius: 8px; font-weight: 700; text-transform: uppercase; font-size: 14px; letter-spacing: 1px; transition: all 0.2s; }}[data-testid="stSidebar"] .stButton > button p::before {{ content: '\\f2f9'; font-family: 'Font Awesome 6 Free'; font-weight: 900; margin-right: 8px; font-size: 16px; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/webp;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
 
     pending_driver, pending_user, pending_cod_driver, pending_cod_user = get_pending_orders()
     pending_standard = pending_driver + pending_user
     pending_cod = pending_cod_driver + pending_cod_user
     
-    df_users = get_all_users()
-    wh_loc = get_warehouse_loc()
-    active_points = get_active_points()
-
     css_dots = ""
     if pending_standard > 0:
         css_dots += """[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::after { content: ''; display: inline-block; width: 8px; height: 8px; background-color: #FF4B4B; border-radius: 50%; margin-left: 3px; transform: translateY(-8px); }"""
@@ -111,7 +147,7 @@ def render_page():
         st.markdown(f"<style>{css_dots}</style>", unsafe_allow_html=True)
 
     current_admin = st.session_state.customer
-    admin_name = df_users[df_users['username'] == current_admin]['fullname'].values[0] if not df_users.empty and current_admin in df_users['username'].values else current_admin
+    admin_name = get_admin_fullname(current_admin)
 
     col_space, col_user = st.columns([8.5, 1.5])
     with col_user:
@@ -124,7 +160,7 @@ def render_page():
                 st.rerun()
 
     if logo_head_b64:
-        logo_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
+        logo_html = f'<img src="data:image/webp;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
     else:
         logo_html = '<i class="fa-solid fa-truck-fast" style="font-size: 30px; margin-right: 12px; color: white; z-index: 2; position: relative;"></i>'
 
@@ -137,7 +173,7 @@ def render_page():
         """, unsafe_allow_html=True)
         
         if st.button("LÀM MỚI DỮ LIỆU", use_container_width=True):
-            st.cache_data.clear()
+            clear_admin_caches()
             st.rerun()
             
         st.markdown("<hr style='margin: 10px 0; border-color: #333;'>", unsafe_allow_html=True)
@@ -147,7 +183,7 @@ def render_page():
         st.markdown("<div style='flex-grow: 1; height: 35vh;'></div>", unsafe_allow_html=True)
         st.markdown(f"""
             <div style="text-align: center; padding: 20px 0; border-top: 1px solid #333; margin-top: auto;">
-                <img src="data:image/png;base64,{bg_img_b64}" style="width: 140px; opacity: 0.15; filter: grayscale(100%); transition: all 0.3s ease;">
+                <img src="data:image/webp;base64,{bg_img_b64}" style="width: 140px; opacity: 0.15; filter: grayscale(100%); transition: all 0.3s ease;">
                 <p style="color: #8b949e; font-size: 13px; margin-top: 15px; font-weight: bold; letter-spacing: 1px;">UMBRELLA LOGISTICS</p>
                 <p style="color: #444; font-size: 11px; margin-top: -10px;">Vinh City Supply Chain © 2026</p>
             </div>
@@ -156,6 +192,11 @@ def render_page():
     st.markdown("<div style='margin-top:-50px;'></div>", unsafe_allow_html=True)
 
     if menu_selection == "Bản đồ Điều phối":
+        df_users = get_all_users()
+        wh_loc = get_warehouse_loc()
+        active_points = get_active_points()
+        active_points_count = get_active_points_count()
+
         st.markdown(f"""
             <div style="display: flex; align-items: center; margin-bottom: 20px; z-index: 2; position: relative;">
                 <i class="fa-solid fa-map-location-dot" style="font-size: 38px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
@@ -182,7 +223,7 @@ def render_page():
             """, unsafe_allow_html=True)
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Tổng đơn hàng", len(active_points))
+        c1.metric("Đơn chờ gom", active_points_count)
         c2.metric("Tài xế Online", len(df_users[(df_users['role'] == '2') & (df_users['current_status'] != "Ngoại tuyến")]))
         c3.metric("Tài khoản bị khóa", len(df_users[df_users['is_locked'] == 1]))
         c4.metric("Khu vực quản lý", "TP Vinh - Nghệ An")
@@ -194,6 +235,7 @@ def render_page():
             st.subheader("Bản đồ giám sát trực tuyến")
             m_admin = folium.Map(location=wh_loc, zoom_start=14, tiles="cartodbpositron")
             folium.Marker(location=wh_loc, icon=folium.DivIcon(html=f'<div style="color:white; background:#FF4B4B; border-radius:50%; width:35px; height:35px; display:flex; align-items:center; justify-content:center; font-weight:bold; border:2px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.5);">KHO</div>')).add_to(m_admin)
+            order_cluster = MarkerCluster(name="Đơn hàng chờ gom").add_to(m_admin)
             
             for _, pt in active_points.iterrows():
                 gmap_link = f"https://www.google.com/maps?q={pt['lat']},{pt['lon']}"
@@ -201,9 +243,9 @@ def render_page():
                 popup_html = f"""<div style="width:200px; color:black; font-family:sans-serif;"><b style="color:#D32F2F;"><i class="fa-solid fa-location-dot"></i> ĐƠN HÀNG PHÁT SINH</b><br><hr style='margin:5px 0'><b>Mã đơn:</b> #{pt['point_id']}<br><b>Người tạo:</b> {pt['created_by']}<br><b>Thời gian:</b> {create_time}<br><a href='{gmap_link}' target='_blank' style='color:#1976D2; font-weight:bold; text-decoration:none;'><i class="fa-solid fa-link"></i> Xem Google Maps</a></div>"""
                 
                 if pt.get('delivery_status', '') == 'Đang chờ duyệt':
-                    folium.Marker(location=[pt['lat'], pt['lon']], icon=folium.Icon(color="orange", icon="check", prefix="fa"), tooltip="Đơn chờ duyệt hoàn thành", popup=folium.Popup(popup_html, max_width=250)).add_to(m_admin)
+                    folium.Marker(location=[pt['lat'], pt['lon']], icon=folium.Icon(color="orange", icon="check", prefix="fa"), tooltip="Đơn chờ duyệt hoàn thành", popup=folium.Popup(popup_html, max_width=250)).add_to(order_cluster)
                 else:
-                    folium.Marker(location=[pt['lat'], pt['lon']], icon=folium.Icon(color="red", icon="info-sign"), tooltip="Đơn hàng chờ gom", popup=folium.Popup(popup_html, max_width=250)).add_to(m_admin)
+                    folium.Marker(location=[pt['lat'], pt['lon']], icon=folium.Icon(color="red", icon="info-sign"), tooltip="Đơn hàng chờ gom", popup=folium.Popup(popup_html, max_width=250)).add_to(order_cluster)
             
             active_drivers = df_users[(df_users['role'] == '2') & (df_users['current_status'] != 'Ngoại tuyến') & (df_users['lat'].notna())]
             for _, driver in active_drivers.iterrows():
@@ -235,7 +277,7 @@ def render_page():
                             conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                             cursor.execute("UPDATE WarehouseConfig SET lat=?, lon=? WHERE id=1", (loc.latitude, loc.longitude))
                             conn.commit(); conn.close()
-                            st.cache_data.clear(); st.rerun()
+                            clear_admin_caches(); st.rerun()
                 with t2:
                     if 'temp_admin_click' in st.session_state:
                         st.info(f"📍 Tọa độ chọn: {st.session_state.temp_admin_click[0]:.5f}, {st.session_state.temp_admin_click[1]:.5f}")
@@ -244,7 +286,7 @@ def render_page():
                             cursor.execute("UPDATE WarehouseConfig SET lat=?, lon=? WHERE id=1", (st.session_state.temp_admin_click[0], st.session_state.temp_admin_click[1]))
                             conn.commit(); conn.close()
                             del st.session_state.temp_admin_click
-                            st.cache_data.clear(); st.rerun()
+                            clear_admin_caches(); st.rerun()
                     else:
                         st.warning("Hãy click vào bản đồ để chọn vị trí.")
 
@@ -261,7 +303,7 @@ def render_page():
                                 conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                                 cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status, order_type) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận', N'chuỗi')", (loc.latitude, loc.longitude, "Chờ xử lý", current_admin))
                                 conn.commit(); conn.close()
-                                st.cache_data.clear(); st.rerun()
+                                clear_admin_caches(); st.rerun()
                     with t4:
                         st.markdown("<p style='font-size:14px; margin-bottom:10px; color:#8b949e;'>Vui lòng chọn trên bản đồ để ghim vị trí.</p>", unsafe_allow_html=True)
                         if 'temp_admin_click' in st.session_state:
@@ -271,7 +313,7 @@ def render_page():
                                 cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status, order_type) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận', N'chuỗi')", (st.session_state.temp_admin_click[0], st.session_state.temp_admin_click[1], "Chờ xử lý", current_admin))
                                 conn.commit(); conn.close()
                                 del st.session_state.temp_admin_click
-                                st.cache_data.clear(); st.rerun()
+                                clear_admin_caches(); st.rerun()
                         else:
                             st.warning("Hãy click vào bản đồ để ghim điểm.")
                     with t5:
@@ -284,7 +326,7 @@ def render_page():
                                 r_lon = base_lon + random.uniform(-0.015, 0.015)
                                 cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status, order_type) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận', N'chuỗi')", (r_lat, r_lon, "Chờ xử lý", current_admin))
                             conn.commit(); conn.close()
-                            st.cache_data.clear(); st.rerun()
+                            clear_admin_caches(); st.rerun()
                 
                 if not active_points.empty:
                     st.markdown("<small>Chọn mã đơn cần hủy:</small>", unsafe_allow_html=True)
@@ -295,7 +337,7 @@ def render_page():
                             conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
                             cursor.execute("DELETE FROM LogisticsPoints WHERE point_id = ?", (int(target_del),))
                             conn.commit(); conn.close()
-                            st.cache_data.clear(); st.rerun()
+                            clear_admin_caches(); st.rerun()
                 else: st.info("Không có đơn chờ.")
 
             st.divider()

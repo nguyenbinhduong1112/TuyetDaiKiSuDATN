@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import pyodbc
 import math
+import numpy as np
 from config import CONN_STR
 
 # --- HÀM TÍNH KHOẢNG CÁCH (HAVERSINE) NGAY TRONG PYTHON ĐỂ TRÁNH QUÁ TẢI SQL ---
@@ -12,6 +13,22 @@ def calculate_distance_km(lat1, lon1, lat2, lon2):
     a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
+
+def calculate_distances_km(wh_lat, wh_lon, lat_values, lon_values):
+    lat2 = np.radians(pd.to_numeric(lat_values, errors="coerce").to_numpy(dtype=float))
+    lon2 = np.radians(pd.to_numeric(lon_values, errors="coerce").to_numpy(dtype=float))
+    valid = ~np.isnan(lat2) & ~np.isnan(lon2)
+    distances = np.zeros(len(lat2), dtype=float)
+    if not valid.any():
+        return distances
+
+    lat1 = math.radians(float(wh_lat))
+    lon1 = math.radians(float(wh_lon))
+    dlat = lat2[valid] - lat1
+    dlon = lon2[valid] - lon1
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2[valid]) * np.sin(dlon / 2) ** 2
+    distances[valid] = 6371.0 * (2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a)))
+    return distances
 
 # Lấy tọa độ kho (Chỉ chạy 1 lần)
 @st.cache_data(ttl=3600)
@@ -43,10 +60,12 @@ def get_top_customers():
         conn.close()
         
         if df_raw.empty: return pd.DataFrame()
+        df_raw = df_raw.dropna(subset=['lat', 'lon']).copy()
+        if df_raw.empty: return pd.DataFrame()
         
         # Vectorized tính tiền siêu tốc bằng Pandas
-        df_raw['Distance'] = df_raw.apply(lambda row: calculate_distance_km(wh_lat, wh_lon, row['lat'], row['lon']), axis=1)
-        df_raw['Fee'] = df_raw['Distance'].apply(lambda d: max(15000, int(d * 6000)))
+        df_raw['Distance'] = calculate_distances_km(wh_lat, wh_lon, df_raw['lat'], df_raw['lon'])
+        df_raw['Fee'] = np.maximum(15000, (df_raw['Distance'].to_numpy() * 6000).astype(int))
         
         # Gom nhóm và tính tổng
         df_agg = df_raw.groupby(['Fullname', 'Username']).agg(
@@ -78,10 +97,12 @@ def get_top_drivers():
         conn.close()
         
         if df_raw.empty: return pd.DataFrame()
+        df_raw = df_raw.dropna(subset=['lat', 'lon']).copy()
+        if df_raw.empty: return pd.DataFrame()
 
         # Tính phí ship của đơn đó
-        df_raw['Distance'] = df_raw.apply(lambda row: calculate_distance_km(wh_lat, wh_lon, row['lat'], row['lon']), axis=1)
-        df_raw['OrderFee'] = df_raw['Distance'].apply(lambda d: max(15000, int(d * 6000)))
+        df_raw['Distance'] = calculate_distances_km(wh_lat, wh_lon, df_raw['lat'], df_raw['lon'])
+        df_raw['OrderFee'] = np.maximum(15000, (df_raw['Distance'].to_numpy() * 6000).astype(int))
         # Giả sử tài xế được hưởng 80% phí ship
         df_raw['Earnings'] = df_raw['OrderFee'] * 0.8
         

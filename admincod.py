@@ -37,6 +37,38 @@ def get_active_cod_orders():
         return df
     except: return pd.DataFrame()
 
+@st.cache_data(ttl=10)
+def get_cod_order_counts():
+    try:
+        conn = pyodbc.connect(CONN_STR)
+        query = """
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT pickup_lat, pickup_lon, created_by, DATEADD(minute, DATEDIFF(minute, 0, created_at), 0) AS time_group
+                        FROM LogisticsPoints
+                        WHERE status = N'Chờ Admin duyệt' AND order_type = N'lẻ'
+                        GROUP BY pickup_lat, pickup_lon, created_by, DATEADD(minute, DATEDIFF(minute, 0, created_at), 0)
+                    ) AS pending_groups
+                ) AS pending_count,
+                (
+                    SELECT COUNT(*)
+                    FROM LogisticsPoints
+                    WHERE status = N'Chờ xử lý' AND order_type = N'lẻ'
+                ) AS waiting_driver_count,
+                (
+                    SELECT COUNT(*)
+                    FROM LogisticsPoints
+                    WHERE status = N'Đang giao' AND order_type = N'lẻ'
+                ) AS delivering_count
+        """
+        row = pd.read_sql(query, conn).iloc[0]
+        conn.close()
+        return tuple(0 if pd.isna(row[col]) else int(row[col]) for col in ["pending_count", "waiting_driver_count", "delivering_count"])
+    except Exception:
+        return 0, 0, 0
+
 # --- HÀM XỬ LÝ DATABASE ---
 def execute_db_cod(query, params=()):
     try:
@@ -45,6 +77,11 @@ def execute_db_cod(query, params=()):
         conn.commit(); conn.close()
         return True
     except: return False
+
+def clear_cod_admin_caches():
+    get_pending_cod_orders.clear()
+    get_active_cod_orders.clear()
+    get_cod_order_counts.clear()
 
 # ==========================================
 # GIAO DIỆN CHÍNH
@@ -59,23 +96,15 @@ def render_cod_admin_page():
         <hr style="border-color: #333; margin-bottom: 20px;">
     """, unsafe_allow_html=True)
 
-    df_pending = get_pending_cod_orders()
-    df_active = get_active_cod_orders()
-
-    num_trips = 0
-    grouped_pending = []
-    if not df_pending.empty:
-        df_pending['time_group'] = pd.to_datetime(df_pending['created_at'], errors='coerce').dt.floor('Min')
-        grouped_pending = df_pending.groupby(['pickup_lat', 'pickup_lon', 'created_by', 'time_group'])
-        num_trips = len(grouped_pending)
+    pending_count, waiting_driver_count, delivering_count = get_cod_order_counts()
 
     # --- CHỈ SỐ KPI ---
     m1, m2, m3, m4 = st.columns(4)
     metrics = [
-        ("Chuyến chờ duyệt", num_trips, "#FF9800", "fa-hourglass-start"),
-        ("Chờ Tài xế nhận", len(df_active[df_active['status'] == 'Chờ xử lý']) if not df_active.empty else 0, "#1E90FF", "fa-motorcycle"),
-        ("Đang đi giao", len(df_active[df_active['status'] == 'Đang giao']) if not df_active.empty else 0, "#4CAF50", "fa-truck-fast"),
-        ("Tổng đơn lẻ", len(df_pending) + len(df_active), "#E91E63", "fa-boxes-stacked")
+        ("Chuyến chờ duyệt", pending_count, "#FF9800", "fa-hourglass-start"),
+        ("Chờ Tài xế nhận", waiting_driver_count, "#1E90FF", "fa-motorcycle"),
+        ("Đang đi giao", delivering_count, "#4CAF50", "fa-truck-fast"),
+        ("Tổng đơn lẻ", pending_count + waiting_driver_count + delivering_count, "#E91E63", "fa-boxes-stacked")
     ]
     
     for col, (label, val, color, icon) in zip([m1, m2, m3, m4], metrics):
@@ -96,18 +125,30 @@ def render_cod_admin_page():
         </style>
     """, unsafe_allow_html=True)
 
-    tab1, tab2 = st.tabs([" CHỜ DUYỆT", " ĐƠN ĐANG CHẠY"])
+    selected_view = st.radio(
+        "Chế độ xem COD",
+        ["CHỜ DUYỆT", "ĐƠN ĐANG CHẠY"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
 
-    with tab1:
+    if selected_view == "CHỜ DUYỆT":
+        df_pending = get_pending_cod_orders()
+
+        grouped_pending = []
+        if not df_pending.empty:
+            df_pending['time_group'] = pd.to_datetime(df_pending['created_at'], errors='coerce').dt.floor('Min')
+            grouped_pending = df_pending.groupby(['pickup_lat', 'pickup_lon', 'created_by', 'time_group'])
+
         if df_pending.empty:
             st.info("Hiện không có chuyến Hỏa tốc nào cần duyệt.")
         else:
             col_b1, col_b2, _ = st.columns([1.5, 1.5, 5])
             if col_b1.button("Duyệt Tất Cả", type="primary", use_container_width=True):
                 if execute_db_cod("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt' AND order_type = N'lẻ'"):
-                    st.cache_data.clear(); st.rerun()
+                    clear_cod_admin_caches(); st.rerun()
             if col_b2.button("Làm mới", use_container_width=True):
-                st.cache_data.clear(); st.rerun()
+                clear_cod_admin_caches(); st.rerun()
             
             st.markdown("<br>", unsafe_allow_html=True)
             cols = st.columns(2)
@@ -147,14 +188,16 @@ def render_cod_admin_page():
                     if btn_col1.button("Duyệt Tuyến", key=f"ap_{point_ids[0]}", use_container_width=True, type="primary"):
                         placeholders = ','.join(['?'] * len(point_ids))
                         if execute_db_cod(f"UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE point_id IN ({placeholders})", point_ids):
-                            st.cache_data.clear(); st.rerun()
+                            clear_cod_admin_caches(); st.rerun()
                     if btn_col2.button("Hủy Tuyến", key=f"re_{point_ids[0]}", use_container_width=True):
                         placeholders = ','.join(['?'] * len(point_ids))
                         if execute_db_cod(f"UPDATE LogisticsPoints SET status = N'Đã hủy' WHERE point_id IN ({placeholders})", point_ids):
-                            st.cache_data.clear(); st.rerun()
+                            clear_cod_admin_caches(); st.rerun()
                 idx += 1
 
-    with tab2:
+    else:
+        df_active = get_active_cod_orders()
+
         st.markdown("### <i class='fa-solid fa-satellite-dish' style='color:#1E90FF;'></i> Giám sát đơn lẻ đang lưu thông", unsafe_allow_html=True)
         if df_active.empty:
             st.info("Hiện không có đơn lẻ nào đang hoạt động.")
