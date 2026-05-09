@@ -14,7 +14,7 @@ def get_chain_orders_data():
         q_create = """
             SELECT point_id, lat, lon, created_by, created_at 
             FROM LogisticsPoints 
-            WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'
+            WHERE status = N'Chờ Admin duyệt' AND order_type = N'chuỗi'
             ORDER BY created_at DESC
         """
         df_create = pd.read_sql(q_create, conn)
@@ -23,7 +23,7 @@ def get_chain_orders_data():
         q_complete = """
             SELECT point_id, lat, lon, created_by, created_at, ISNULL(driver_id, 'Unknown') as driver_id 
             FROM LogisticsPoints 
-            WHERE delivery_status = N'Đang chờ duyệt' AND ISNULL(order_type, '') != N'lẻ'
+            WHERE delivery_status = N'Đang chờ duyệt' AND order_type = N'chuỗi'
             ORDER BY created_at DESC
         """
         df_complete = pd.read_sql(q_complete, conn)
@@ -32,7 +32,7 @@ def get_chain_orders_data():
         q_active = """
             SELECT point_id, status, delivery_status, created_by, lat, lon, ISNULL(driver_id, 'Chưa nhận') as driver_id
             FROM LogisticsPoints 
-            WHERE status = N'Chờ xử lý' AND ISNULL(delivery_status, '') != N'Đang chờ duyệt' AND ISNULL(order_type, '') != N'lẻ'
+            WHERE status = N'Chờ xử lý' AND delivery_status <> N'Đang chờ duyệt' AND order_type = N'chuỗi'
             ORDER BY created_at DESC
         """
         df_active = pd.read_sql(q_active, conn)
@@ -41,6 +41,88 @@ def get_chain_orders_data():
         return df_create, df_complete, df_active
     except Exception as e:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+@st.cache_data(ttl=10)
+def get_chain_pending_data():
+    try:
+        conn = pyodbc.connect(CONN_STR)
+        q_create = """
+            SELECT point_id, lat, lon, created_by, created_at
+            FROM LogisticsPoints
+            WHERE status = N'Chờ Admin duyệt' AND order_type = N'chuỗi'
+            ORDER BY created_at DESC
+        """
+        df_create = pd.read_sql(q_create, conn)
+
+        q_complete = """
+            SELECT point_id, lat, lon, created_by, created_at, ISNULL(driver_id, 'Unknown') as driver_id
+            FROM LogisticsPoints
+            WHERE delivery_status = N'Đang chờ duyệt' AND order_type = N'chuỗi'
+            ORDER BY created_at DESC
+        """
+        df_complete = pd.read_sql(q_complete, conn)
+        conn.close()
+        return df_create, df_complete
+    except Exception:
+        return pd.DataFrame(), pd.DataFrame()
+
+@st.cache_data(ttl=10)
+def get_chain_active_data():
+    try:
+        conn = pyodbc.connect(CONN_STR)
+        query = """
+            SELECT point_id, status, delivery_status, created_by, lat, lon, ISNULL(driver_id, 'Chưa nhận') as driver_id
+            FROM LogisticsPoints
+            WHERE status = N'Chờ xử lý' AND delivery_status <> N'Đang chờ duyệt' AND order_type = N'chuỗi'
+            ORDER BY created_at DESC
+        """
+        df = pd.read_sql(query, conn)
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=10)
+def get_chain_order_counts():
+    try:
+        conn = pyodbc.connect(CONN_STR)
+        query = """
+            SELECT
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT created_by, DATEADD(minute, DATEDIFF(minute, 0, created_at), 0) AS time_group
+                        FROM LogisticsPoints
+                        WHERE status = N'Chờ Admin duyệt' AND order_type = N'chuỗi'
+                        GROUP BY created_by, DATEADD(minute, DATEDIFF(minute, 0, created_at), 0)
+                    ) AS create_groups
+                ) AS create_count,
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT ISNULL(driver_id, 'Unknown') AS driver_id, DATEADD(minute, DATEDIFF(minute, 0, created_at), 0) AS time_group
+                        FROM LogisticsPoints
+                        WHERE delivery_status = N'Đang chờ duyệt' AND order_type = N'chuỗi'
+                        GROUP BY ISNULL(driver_id, 'Unknown'), DATEADD(minute, DATEDIFF(minute, 0, created_at), 0)
+                    ) AS complete_groups
+                ) AS complete_count,
+                (
+                    SELECT COUNT(*)
+                    FROM LogisticsPoints
+                    WHERE status = N'Chờ xử lý' AND delivery_status <> N'Đang chờ duyệt' AND order_type = N'chuỗi'
+                ) AS active_count
+        """
+        row = pd.read_sql(query, conn).iloc[0]
+        conn.close()
+        return tuple(0 if pd.isna(row[col]) else int(row[col]) for col in ["create_count", "complete_count", "active_count"])
+    except Exception:
+        return 0, 0, 0
+
+def clear_chain_order_caches():
+    get_chain_orders_data.clear()
+    get_chain_pending_data.clear()
+    get_chain_active_data.clear()
+    get_chain_order_counts.clear()
 
 # --- HÀM XỬ LÝ DATABASE ---
 def execute_db_chain(query, params=()):
@@ -64,29 +146,15 @@ def render_page():
         <hr style="border-color: #333; margin-bottom: 20px;">
     """, unsafe_allow_html=True)
 
-    df_create, df_complete, df_active = get_chain_orders_data()
-
-    # Nhóm dữ liệu để hiển thị dạng thẻ (Card)
-    num_create_groups, num_complete_groups = 0, 0
-    grouped_create, grouped_complete = [], []
-    
-    if not df_create.empty:
-        df_create['time_group'] = pd.to_datetime(df_create['created_at'], errors='coerce').dt.floor('Min')
-        grouped_create = df_create.groupby(['created_by', 'time_group'])
-        num_create_groups = len(grouped_create)
-
-    if not df_complete.empty:
-        df_complete['time_group'] = pd.to_datetime(df_complete['created_at'], errors='coerce').dt.floor('Min')
-        grouped_complete = df_complete.groupby(['driver_id', 'time_group'])
-        num_complete_groups = len(grouped_complete)
+    create_count, complete_count, active_count = get_chain_order_counts()
 
     # --- CHỈ SỐ KPI ---
     m1, m2, m3, m4 = st.columns(4)
     metrics = [
-        ("Yêu cầu tạo mới", num_create_groups, "#1976D2", "fa-plus-circle"),
-        ("Chờ duyệt hoàn thành", num_complete_groups, "#FF9800", "fa-check-double"),
-        ("Tuyến đang chờ gom", len(df_active), "#4CAF50", "fa-route"),
-        ("Tổng đơn hệ thống", len(df_create) + len(df_complete) + len(df_active), "#E91E63", "fa-cubes")
+        ("Yêu cầu tạo mới", create_count, "#1976D2", "fa-plus-circle"),
+        ("Chờ duyệt hoàn thành", complete_count, "#FF9800", "fa-check-double"),
+        ("Tuyến đang chờ gom", active_count, "#4CAF50", "fa-route"),
+        ("Tổng đơn hệ thống", create_count + complete_count + active_count, "#E91E63", "fa-cubes")
     ]
     
     for col, (label, val, color, icon) in zip([m1, m2, m3, m4], metrics):
@@ -107,24 +175,40 @@ def render_page():
         </style>
     """, unsafe_allow_html=True)
 
-    tab1, tab2 = st.tabs([" YÊU CẦU CHỜ DUYỆT", " THEO DÕI ĐƠN ĐANG CHẠY"])
+    selected_view = st.radio(
+        "Chế độ xem đơn chuỗi",
+        ["YÊU CẦU CHỜ DUYỆT", "THEO DÕI ĐƠN ĐANG CHẠY"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
 
     # ================== TAB 1: YÊU CẦU CHỜ DUYỆT ==================
-    with tab1:
+    if selected_view == "YÊU CẦU CHỜ DUYỆT":
+        df_create, df_complete = get_chain_pending_data()
+
+        # Nhóm dữ liệu để hiển thị dạng thẻ (Card)
+        grouped_create, grouped_complete = [], []
+        if not df_create.empty:
+            df_create['time_group'] = pd.to_datetime(df_create['created_at'], errors='coerce').dt.floor('Min')
+            grouped_create = df_create.groupby(['created_by', 'time_group'])
+        if not df_complete.empty:
+            df_complete['time_group'] = pd.to_datetime(df_complete['created_at'], errors='coerce').dt.floor('Min')
+            grouped_complete = df_complete.groupby(['driver_id', 'time_group'])
+
         if df_create.empty and df_complete.empty:
             st.info("Hiện không có yêu cầu Đơn chuỗi nào cần xử lý.")
             if st.button("Làm mới dữ liệu", use_container_width=True):
-                get_chain_orders_data.clear(); st.rerun()
+                clear_chain_order_caches(); st.rerun()
         else:
             col_b1, col_b2, col_b3, _ = st.columns([1.5, 1.5, 1.5, 3.5])
             if not df_create.empty and col_b1.button("Duyệt Tất Cả (Tạo Mới)", type="primary", use_container_width=True):
-                if execute_db_chain("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt' AND ISNULL(order_type, '') != N'lẻ'"):
-                    get_chain_orders_data.clear(); st.rerun()
+                if execute_db_chain("UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE status = N'Chờ Admin duyệt' AND order_type = N'chuỗi'"):
+                    clear_chain_order_caches(); st.rerun()
             if not df_complete.empty and col_b2.button("Duyệt Tất Cả (Hoàn Thành)", type="primary", use_container_width=True):
-                if execute_db_chain("UPDATE LogisticsPoints SET status = N'Đã hoàn thành', delivery_status = N'Đã hoàn thành' WHERE delivery_status = N'Đang chờ duyệt' AND ISNULL(order_type, '') != N'lẻ'"):
-                    get_chain_orders_data.clear(); st.rerun()
+                if execute_db_chain("UPDATE LogisticsPoints SET status = N'Đã hoàn thành', delivery_status = N'Đã hoàn thành' WHERE delivery_status = N'Đang chờ duyệt' AND order_type = N'chuỗi'"):
+                    clear_chain_order_caches(); st.rerun()
             if col_b3.button("Làm mới", use_container_width=True):
-                get_chain_orders_data.clear(); st.rerun()
+                clear_chain_order_caches(); st.rerun()
             
             st.markdown("<br>", unsafe_allow_html=True)
             cols = st.columns(2)
@@ -160,11 +244,11 @@ def render_page():
                     if btn_col1.button("Duyệt Đơn Mới", key=f"app_cr_{point_ids[0]}", use_container_width=True, type="primary"):
                         placeholders = ','.join(['?'] * len(point_ids))
                         if execute_db_chain(f"UPDATE LogisticsPoints SET status = N'Chờ xử lý' WHERE point_id IN ({placeholders})", point_ids):
-                            get_chain_orders_data.clear(); st.rerun()
+                            clear_chain_order_caches(); st.rerun()
                     if btn_col2.button("Từ Chối Mới", key=f"rej_cr_{point_ids[0]}", use_container_width=True):
                         placeholders = ','.join(['?'] * len(point_ids))
                         if execute_db_chain(f"UPDATE LogisticsPoints SET status = N'Từ chối' WHERE point_id IN ({placeholders})", point_ids):
-                            get_chain_orders_data.clear(); st.rerun()
+                            clear_chain_order_caches(); st.rerun()
                 idx += 1
 
             # 2. RENDER THẺ YÊU CẦU HOÀN THÀNH (Từ Tài Xế)
@@ -197,15 +281,17 @@ def render_page():
                     if btn_col1.button("Chốt Hoàn Thành", key=f"app_com_{point_ids[0]}", use_container_width=True, type="primary"):
                         placeholders = ','.join(['?'] * len(point_ids))
                         if execute_db_chain(f"UPDATE LogisticsPoints SET status = N'Đã hoàn thành', delivery_status = N'Đã hoàn thành' WHERE point_id IN ({placeholders})", point_ids):
-                            get_chain_orders_data.clear(); st.rerun()
+                            clear_chain_order_caches(); st.rerun()
                     if btn_col2.button("Từ Chối Chốt", key=f"rej_com_{point_ids[0]}", use_container_width=True):
                         placeholders = ','.join(['?'] * len(point_ids))
                         if execute_db_chain(f"UPDATE LogisticsPoints SET delivery_status = N'Chờ xác nhận' WHERE point_id IN ({placeholders})", point_ids):
-                            get_chain_orders_data.clear(); st.rerun()
+                            clear_chain_order_caches(); st.rerun()
                 idx += 1
 
     # ================== TAB 2: ĐƠN ĐANG CHẠY ==================
-    with tab2:
+    else:
+        df_active = get_chain_active_data()
+
         st.markdown("### <i class='fa-solid fa-map-location-dot' style='color:#4CAF50;'></i> Danh sách điểm giao đang chờ gom", unsafe_allow_html=True)
         if df_active.empty:
             st.info("Hiện không có đơn chuỗi nào đang chờ tài xế nhận hoặc đang lưu thông.")

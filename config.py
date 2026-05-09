@@ -3,7 +3,7 @@
 # ==========================================
 
 
-SERVER_NAME = r'DESKTOP-U4FQD35' 
+SERVER_NAME = r'DESKTOP-PBLN8GD\DUCVJPPRO'
 
 DATABASE_NAME = 'LogisticsDB'
 

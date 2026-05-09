@@ -1,17 +1,13 @@
 import streamlit as st
-import torch
 import numpy as np
 import pandas as pd
 import folium
 from folium.plugins import AntPath
 from streamlit_folium import st_folium
-from model import PointerNet
-from map_utils import MapManager
-from engine import solve_delivery_route
+from route_optimizer import route_distance_km, solve_delivery_route
 import os
 import urllib.parse
 import base64
-import math
 import random
 import pyodbc
 import requests  # THÊM THƯ VIỆN NÀY ĐỂ GỌI API BẢN ĐỒ
@@ -32,17 +28,25 @@ def execute_db(query, params=()):
 
 # --- HÀM GỌI API OSRM ĐỂ VẼ ĐƯỜNG BÁM SÁT THỰC TẾ ---
 def get_osrm_route(locations, route_indices):
+    ordered_locs = []
+    indices = list(route_indices)
+    if indices and indices[-1] != indices[0]:
+        indices.append(indices[0])
+    for i in indices:
+        lat, lon = locations[i]
+        ordered_locs.append((round(float(lat), 6), round(float(lon), 6)))
+    return get_osrm_route_cached(tuple(ordered_locs))
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_osrm_route_cached(ordered_locs):
     try:
-        # Lấy danh sách tọa độ đã sắp xếp theo AI (route_indices)
-        ordered_locs = [locations[i] for i in route_indices]
-        ordered_locs.append(locations[route_indices[0]]) # Nối về kho để tạo vòng khép kín
-        
         # OSRM yêu cầu định dạng: lon,lat;lon,lat...
         coords_str = ";".join([f"{lon},{lat}" for lat, lon in ordered_locs])
         
         # Gọi API OSRM (Sử dụng server public miễn phí)
-        url = f"http://router.project-osrm.org/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
-        response = requests.get(url, timeout=10)
+        url = f"https://router.project-osrm.org/route/v1/driving/{coords_str}?overview=full&geometries=geojson"
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
         data = response.json()
         
         if data.get("code") == "Ok":
@@ -53,18 +57,6 @@ def get_osrm_route(locations, route_indices):
     except Exception as e:
         print(f"Lỗi API OSRM: {e}")
         return None
-
-# --- CÁC HÀM XỬ LÝ LOGIC & CACHE (ĐƠN CHUỖI) ---
-def calculate_route_distance(locations, route_indices):
-    if not route_indices or len(route_indices) < 2: return 0.0
-    R, total_dist = 6371.0, 0.0
-    full_route = route_indices + [route_indices[0]]
-    for i in range(len(full_route) - 1):
-        p1, p2 = locations[full_route[i]], locations[full_route[i+1]]
-        lat1, lon1, lat2, lon2 = map(math.radians, [p1[0], p1[1], p2[0], p2[1]])
-        a = math.sin((lat2-lat1)/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin((lon2-lon1)/2)**2
-        total_dist += R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
-    return total_dist * 1.3
 
 @st.cache_data
 def get_base64_of_bin_file(bin_file):
@@ -79,7 +71,7 @@ def fetch_real_data():
         df_kho = pd.read_sql("SELECT lat, lon FROM WarehouseConfig WHERE id = 1", conn)
         kho = [df_kho.iloc[0]['lat'], df_kho.iloc[0]['lon']] if not df_kho.empty else [18.6601, 105.6942]
         
-        query = "SELECT lat, lon FROM LogisticsPoints WHERE status = N'Chờ xử lý' AND ISNULL(delivery_status, '') != N'Đang chờ duyệt' AND order_type = N'chuỗi'"
+        query = "SELECT lat, lon FROM LogisticsPoints WHERE status = N'Chờ xử lý' AND delivery_status <> N'Đang chờ duyệt' AND order_type = N'chuỗi'"
         df_pts = pd.read_sql(query, conn)
         conn.close()
         return np.array([kho] + df_pts.values.tolist()), len(df_pts)
@@ -89,17 +81,10 @@ def fetch_real_data():
 def get_pending_count():
     try:
         conn = pyodbc.connect(CONN_STR)
-        count = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE delivery_status = N'Đang chờ duyệt'", conn).iloc[0,0]
+        count = pd.read_sql("SELECT COUNT(*) FROM LogisticsPoints WHERE delivery_status = N'Đang chờ duyệt' AND order_type = N'chuỗi'", conn).iloc[0,0]
         conn.close()
         return count
     except: return 0
-
-@st.cache_resource
-def load_all():
-    model = PointerNet()
-    if os.path.exists('weights.pth'): model.load_state_dict(torch.load('weights.pth', map_location='cpu'))
-    model.eval()
-    return model, MapManager()
 
 @st.cache_data(ttl=300)
 def get_driver_fullname(username):
@@ -131,18 +116,15 @@ def update_location(status, lat, lon):
 # ==========================================
 def render_page():
     gmaps_hover_b64 = get_base64_of_bin_file(os.path.join("img", "Google-Maps-PNG-Free-Download.png"))
-    bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "E2449DA3-F2EB-430A-A588-2F9E9C6C2961.png"))
-    logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "19180C31-3EB3-48C4-92C8-7CD1BC52F90C (1).png"))
+    bg_img_b64 = get_base64_of_bin_file(os.path.join("img", "watermark_optimized.webp"))
+    logo_head_b64 = get_base64_of_bin_file(os.path.join("img", "logo_optimized.webp"))
 
-    st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; z-index: 2; position: relative; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f468'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f5a0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f1da'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(5) p::before {{ content: '\\f2c2'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}.gmaps-btn {{ position: relative; display: flex; align-items: center; justify-content: center; background-color: #FF4B4B !important; color: white !important; padding: 0.7rem 1rem; border-radius: 8px; text-decoration: none !important; font-weight: 700; font-size: 18px; border: 1px solid #FF4B4B !important; transition: all 0.3s ease-in-out; width: 100%; box-sizing: border-box; overflow: hidden; }}.gmaps-btn::before {{ content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background-image: url('data:image/png;base64,{gmaps_hover_b64}'); background-size: 40px; background-repeat: no-repeat; background-position: 20px center; transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1); z-index: 1; opacity: 0; }}.gmaps-btn:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; }}.gmaps-btn:hover::before {{ left: 0; opacity: 0.6; }}.btn-text-content {{ position: relative; z-index: 2; display: flex; align-items: center; gap: 8px; }}button[kind="primary"] {{ background-color: #FF4B4B !important; border-color: #FF4B4B !important; transition: all 0.3s ease-in-out !important; }}button[kind="primary"]:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; color: white !important; }}.qr-overlay {{ display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 999999; justify-content: center; align-items: center; backdrop-filter: blur(5px); }}#qr-toggle:checked ~ .qr-overlay {{ display: flex !important; }}.qr-popup {{ background: white; padding: 20px; border-radius: 15px; position: relative; text-align: center; box-shadow: 0 0 30px rgba(0,0,0,0.8); }}.close-btn {{ position: absolute; top: -15px; right: -15px; background: #FF4B4B; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 24px; font-weight: bold; border: 3px solid white; transition: 0.3s; }}.open-btn {{ display: block; background: #262730; color: white; text-align: center; border-radius: 6px; cursor: pointer; font-weight: bold; border: 1px solid #444; transition: 0.3s; }}.open-btn:hover {{ background: #3a3d4a; border-color: #666; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/png;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"><style>.stApp {{ background-color: #0E1117; color: white; }}[data-testid="stSidebar"] {{ background-color: #1A1C24; border-right: 1px solid #333; padding-top: 1rem; display: flex; flex-direction: column; justify-content: space-between; }}div[data-testid="metric-container"] {{ background-color: #1A1C24; padding: 15px; border-radius: 10px; border: 1px solid #333; z-index: 2; position: relative; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] {{ gap: 8px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] {{ background-color: transparent; border-radius: 8px; padding: 12px 15px; cursor: pointer; transition: all 0.2s ease-in-out; border-left: 4px solid transparent; margin-bottom: 2px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {{ display: none !important; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover {{ background-color: #21262d; transform: translateX(4px); }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) {{ background-color: #21262d; border-left: 4px solid #FF4B4B; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] p {{ color: #8b949e !important; font-weight: 500; font-size: 16px; margin: 0; display: flex; align-items: center; gap: 12px; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p {{ color: white !important; font-weight: 700; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(1) p::before {{ content: '\\f468'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(2) p::before {{ content: '\\f466'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(3) p::before {{ content: '\\f5a0'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(4) p::before {{ content: '\\f1da'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [role="radiogroup"] > label:nth-child(5) p::before {{ content: '\\f2c2'; font-family: 'Font Awesome 6 Free'; font-weight: 900; width: 22px; text-align: center; color: inherit; transition: 0.3s; }}[data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:hover p::before, [data-testid="stSidebar"] .stRadio [data-baseweb="radio"]:has(input:checked) p::before {{ color: #FF4B4B !important; }}.gmaps-btn {{ position: relative; display: flex; align-items: center; justify-content: center; background-color: #FF4B4B !important; color: white !important; padding: 0.7rem 1rem; border-radius: 8px; text-decoration: none !important; font-weight: 700; font-size: 18px; border: 1px solid #FF4B4B !important; transition: all 0.3s ease-in-out; width: 100%; box-sizing: border-box; overflow: hidden; }}.gmaps-btn::before {{ content: ""; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background-image: url('data:image/png;base64,{gmaps_hover_b64}'); background-size: 40px; background-repeat: no-repeat; background-position: 20px center; transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1); z-index: 1; opacity: 0; }}.gmaps-btn:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; }}.gmaps-btn:hover::before {{ left: 0; opacity: 0.6; }}.btn-text-content {{ position: relative; z-index: 2; display: flex; align-items: center; gap: 8px; }}button[kind="primary"] {{ background-color: #FF4B4B !important; border-color: #FF4B4B !important; transition: all 0.3s ease-in-out !important; }}button[kind="primary"]:hover {{ background-color: #FF7575 !important; border-color: #FF7575 !important; color: white !important; }}.qr-overlay {{ display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 999999; justify-content: center; align-items: center; backdrop-filter: blur(5px); }}#qr-toggle:checked ~ .qr-overlay {{ display: flex !important; }}.qr-popup {{ background: white; padding: 20px; border-radius: 15px; position: relative; text-align: center; box-shadow: 0 0 30px rgba(0,0,0,0.8); }}.close-btn {{ position: absolute; top: -15px; right: -15px; background: #FF4B4B; color: white; width: 40px; height: 40px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 24px; font-weight: bold; border: 3px solid white; transition: 0.3s; }}.open-btn {{ display: block; background: #262730; color: white; text-align: center; border-radius: 6px; cursor: pointer; font-weight: bold; border: 1px solid #444; transition: 0.3s; }}.open-btn:hover {{ background: #3a3d4a; border-color: #666; }}.bg-watermark {{ position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 700px; height: 700px; background-image: url('data:image/webp;base64,{bg_img_b64}'); background-size: contain; background-position: center; background-repeat: no-repeat; opacity: 0.15; z-index: 0; pointer-events: none; }}</style><div class="bg-watermark"></div>""", unsafe_allow_html=True)
 
     if "customer" not in st.session_state or str(st.session_state.get("role", "")) != "2":
         st.warning("Vui lòng đăng nhập bằng tài khoản Tài xế!")
         st.stop()
 
-    if 'locations' not in st.session_state: st.session_state.locations, _ = fetch_real_data()
-    if 'route_indices' not in st.session_state: st.session_state.route_indices = None
-    if 'actual_path' not in st.session_state: st.session_state.actual_path = None
     if 'map_refresh_key' not in st.session_state: st.session_state.map_refresh_key = 0
 
     if 'driver_status' not in st.session_state or 'driver_loc' not in st.session_state:
@@ -150,7 +132,6 @@ def render_page():
         st.session_state.driver_status = db_status
         st.session_state.driver_loc = db_loc
 
-    model, map_mgr = load_all()
     driver_user = st.session_state.customer
     driver_fullname = get_driver_fullname(driver_user)
 
@@ -188,7 +169,7 @@ def render_page():
                 st.rerun()
 
     if logo_head_b64:
-        logo_sidebar_html = f'<img src="data:image/png;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
+        logo_sidebar_html = f'<img src="data:image/webp;base64,{logo_head_b64}" style="width: 45px; margin-right: 12px; z-index: 2; position: relative;">'
     else:
         logo_sidebar_html = '<i class="fa-solid fa-truck-fast" style="font-size: 30px; margin-right: 12px; color: white; z-index: 2; position: relative;"></i>'
 
@@ -196,11 +177,15 @@ def render_page():
         st.markdown(f"<div style='display: flex; align-items: center; margin-bottom: 20px;'>{logo_sidebar_html}<h3 style='color: white; margin: 0; font-weight: bold;'>QUẢN LÝ CÔNG VIỆC</h3></div>", unsafe_allow_html=True)
         menu_selection = st.radio("Điều hướng", ["Đơn hàng chuỗi", "Đơn hàng lẻ", "Tình trạng giao thông", "Lịch sử đơn hàng", "Quản lý thông vị cá nhân"], label_visibility="collapsed")
         st.markdown("<div style='flex-grow: 1; height: 35vh;'></div>", unsafe_allow_html=True)
-        st.markdown(f"""<div style="text-align: center; padding: 20px 0; border-top: 1px solid #333; margin-top: auto;"><img src="data:image/png;base64,{bg_img_b64}" style="width: 140px; opacity: 0.15; filter: grayscale(100%);"><p style="color: #8b949e; font-size: 13px; margin-top: 15px; font-weight: bold; letter-spacing: 1px;">UMBRELLA DRIVER APP</p><p style="color: #444; font-size: 11px; margin-top: -10px;">Vinh City Supply Chain © 2026</p></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="text-align: center; padding: 20px 0; border-top: 1px solid #333; margin-top: auto;"><img src="data:image/webp;base64,{bg_img_b64}" style="width: 140px; opacity: 0.15; filter: grayscale(100%);"><p style="color: #8b949e; font-size: 13px; margin-top: 15px; font-weight: bold; letter-spacing: 1px;">UMBRELLA DRIVER APP</p><p style="color: #444; font-size: 11px; margin-top: -10px;">Vinh City Supply Chain © 2026</p></div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='margin-top:-50px;'></div>", unsafe_allow_html=True)
 
     if menu_selection == "Đơn hàng chuỗi":
+        if 'locations' not in st.session_state: st.session_state.locations, _ = fetch_real_data()
+        if 'route_indices' not in st.session_state: st.session_state.route_indices = None
+        if 'actual_path' not in st.session_state: st.session_state.actual_path = None
+
         st.markdown(f"""
             <div style="display: flex; align-items: center; margin-bottom: 10px; z-index: 2; position: relative;">
                 <i class="fa-solid fa-truck-fast" style="font-size: 42px; margin-right: 15px; color: white; z-index: 2; position: relative;"></i>
@@ -216,7 +201,8 @@ def render_page():
             st.write("---")
             
             if st.button("Đồng bộ đơn hàng mới", use_container_width=True):
-                st.cache_data.clear() 
+                fetch_real_data.clear()
+                get_pending_count.clear()
                 st.session_state.locations, n_orders = fetch_real_data()
                 st.session_state.route_indices, st.session_state.actual_path = None, None
                 st.rerun()
@@ -225,8 +211,9 @@ def render_page():
 
             if len(st.session_state.locations) > 1:
                 if st.button("Xác nhận đã hoàn thành đơn", use_container_width=True, type="primary"):
-                    if execute_db("UPDATE LogisticsPoints SET delivery_status = N'Đang chờ duyệt', driver_id = ? WHERE status = N'Chờ xử lý' AND ISNULL(delivery_status, '') != N'Đang chờ duyệt' AND order_type = N'chuỗi'", (driver_user,)):
-                        st.cache_data.clear()
+                    if execute_db("UPDATE LogisticsPoints SET delivery_status = N'Đang chờ duyệt', driver_id = ? WHERE status = N'Chờ xử lý' AND delivery_status <> N'Đang chờ duyệt' AND order_type = N'chuỗi'", (driver_user,)):
+                        fetch_real_data.clear()
+                        get_pending_count.clear()
                         st.session_state.route_indices, st.session_state.actual_path = None, None
                         st.session_state.locations, _ = fetch_real_data() 
                         st.success("Đã gửi yêu cầu lên Admin!")
@@ -245,8 +232,7 @@ def render_page():
                     # --- NÂNG CẤP VẼ ĐƯỜNG VỚI API OSRM ---
                     with st.status("AI đang xử lý lộ trình tối ưu...", expanded=False):
                         st.write("Đang giải bài toán TSP...")
-                        coords_tensor = torch.FloatTensor(st.session_state.locations)
-                        st.session_state.route_indices = solve_delivery_route(model, coords_tensor)
+                        st.session_state.route_indices = solve_delivery_route(st.session_state.locations, close_loop=True)
                         
                         st.write("Đang lấy dữ liệu bản đồ giao thông thực tế...")
                         actual_route = get_osrm_route(st.session_state.locations, st.session_state.route_indices)
@@ -285,7 +271,7 @@ def render_page():
             gmaps_url = f"https://www.google.com/maps/dir/Current+Location/{kho_loc[0]},{kho_loc[1]}/{pts_str}/"
             with col_info:
                 m1, m2, m3 = st.columns([1.2, 1, 1])
-                dist = calculate_route_distance(st.session_state.locations, st.session_state.route_indices)
+                dist = route_distance_km(st.session_state.locations, st.session_state.route_indices)
                 m1.metric("Trạng thái", "Thành công")
                 m2.metric("Quãng đường", f"{dist:.2f} km")
                 m3.metric("Số điểm giao", f"{len(st.session_state.locations) - 1} điểm")

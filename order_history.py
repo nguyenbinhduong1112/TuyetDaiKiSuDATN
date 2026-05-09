@@ -8,36 +8,37 @@ from config import CONN_STR
 def get_order_history(username, role):
     try:
         conn = pyodbc.connect(CONN_STR)
-        
-        # Select toàn bộ dữ liệu
-        query = "SELECT * FROM LogisticsPoints ORDER BY created_at DESC"
-        df = pd.read_sql(query, conn)
-        conn.close()
 
-        if df.empty: return df
+        columns = """
+            point_id, order_type, created_by, driver_id, created_at,
+            status, delivery_status, lat, lon
+        """
 
-        # [CẬP NHẬT LOGIC]: Lọc thông minh theo Quyền (Role)
-        if role == '3': 
-            # Khách hàng chỉ xem đơn mình đặt
-            df = df[df['created_by'] == username]
+        if role == '3':
+            query = f"""
+                SELECT TOP (1000) {columns}
+                FROM LogisticsPoints
+                WHERE created_by = ?
+                ORDER BY created_at DESC
+            """
+            df = pd.read_sql(query, conn, params=[username])
         elif role == '2':
-            # Tài xế chỉ xem đơn mình nhận giao (Cần DB có lưu driver_id)
-            # Tạm thời nếu DB chưa có driver_id chuẩn, dùng giả lập lọc theo tên
-            # Nếu DB sếp có gán tên tài xế vào đâu đó, thay đổi điều kiện lọc tương ứng.
-            # Dưới đây là ví dụ giả định cột 'driver_id' lưu username của tài xế:
-            if 'driver_id' in df.columns:
-                df = df[df['driver_id'] == username]
-            else:
-                # Nếu DB chưa có, tạm trả về DataFrame rỗng (hoặc hiển thị báo lỗi)
-                # để đảm bảo bảo mật không rò rỉ đơn của tài xế khác.
-                # Sếp có thể comment dòng dưới và mở dòng df = df.head(0) nếu muốn chặt chẽ.
-                df['driver_id'] = "Chờ phân công..."
-                # df = df.head(0) 
-
-        # Admin (Role 1) thì không bị lọc, xem tất cả.
-        
-        # Giới hạn 1000 đơn để tránh lag hệ thống
-        return df.head(1000)
+            query = f"""
+                SELECT TOP (1000) {columns}
+                FROM LogisticsPoints
+                WHERE driver_id = ?
+                ORDER BY created_at DESC
+            """
+            df = pd.read_sql(query, conn, params=[username])
+        else:
+            query = f"""
+                SELECT TOP (1000) {columns}
+                FROM LogisticsPoints
+                ORDER BY created_at DESC
+            """
+            df = pd.read_sql(query, conn)
+        conn.close()
+        return df
     except Exception as e:
         return pd.DataFrame()
 

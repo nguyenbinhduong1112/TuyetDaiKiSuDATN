@@ -1,4 +1,3 @@
-torch
 numpy
 streamlit
 folium
@@ -10,3 +9,4 @@ scipy
 pyodbc
 geopy
 PyJWT
+requests
