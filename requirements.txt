@@ -2,6 +2,7 @@ numpy
 streamlit
 folium
 streamlit-folium
+streamlit-searchbox
 osmnx
 networkx
 pandas

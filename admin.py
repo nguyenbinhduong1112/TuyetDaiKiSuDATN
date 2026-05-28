@@ -7,11 +7,28 @@ from streamlit_folium import st_folium
 import base64
 import random
 from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError
 from datetime import datetime
 import os
 from config import CONN_STR
+from address_search import address_form
 
-geolocator = Nominatim(user_agent="umbrella_logistics_admin")
+geolocator = Nominatim(user_agent="umbrella_logistics_admin", timeout=10)
+
+
+def safe_geocode(address):
+    """Gọi Nominatim an toàn: trả về location hoặc None, hiện lỗi thân thiện nếu fail."""
+    if not address or not address.strip():
+        st.error("Vui lòng nhập địa chỉ.")
+        return None
+    try:
+        return geolocator.geocode(address, timeout=10)
+    except (GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError) as e:
+        st.error(f"Dịch vụ bản đồ tạm thời không phản hồi. Vui lòng thử lại hoặc chọn vị trí trực tiếp trên Map. ({type(e).__name__})")
+        return None
+    except Exception as e:
+        st.error(f"Lỗi khi tra cứu địa chỉ: {e}")
+        return None
 
 # --- TỐI ƯU CỐT LÕI: ĐỌC ẢNH 1 LẦN VÀO RAM ---
 @st.cache_data
@@ -270,14 +287,19 @@ def render_page():
             with st.popover("Sửa vị trí Kho", use_container_width=True):
                 t1, t2 = st.tabs(["Nhập địa chỉ", "Chọn trên Map"])
                 with t1:
-                    addr_wh = st.text_input("Nhập địa chỉ kho mới:")
-                    if st.button("Tìm & Lưu Kho"):
-                        loc = geolocator.geocode(addr_wh)
-                        if loc:
+                    wh_pick = address_form(key="addr_admin_warehouse",
+                                            button_label="Lưu vị trí Kho")
+                    if wh_pick:
+                        try:
                             conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                            cursor.execute("UPDATE WarehouseConfig SET lat=?, lon=? WHERE id=1", (loc.latitude, loc.longitude))
+                            cursor.execute("UPDATE WarehouseConfig SET lat=?, lon=? WHERE id=1",
+                                            (wh_pick["lat"], wh_pick["lon"]))
                             conn.commit(); conn.close()
-                            clear_admin_caches(); st.rerun()
+                            clear_admin_caches()
+                            st.success(f"Đã đổi Kho: {wh_pick['label']}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Lỗi cập nhật kho: {e}")
                 with t2:
                     if 'temp_admin_click' in st.session_state:
                         st.info(f"📍 Tọa độ chọn: {st.session_state.temp_admin_click[0]:.5f}, {st.session_state.temp_admin_click[1]:.5f}")
@@ -296,14 +318,18 @@ def render_page():
                 with st.popover("Thêm đơn hàng", use_container_width=True):
                     t3, t4, t5 = st.tabs(["Nhập địa chỉ", "Chọn trên Map", "Tạo đơn mẫu"])
                     with t3:
-                        addr_ord = st.text_input("Địa chỉ đơn:")
-                        if st.button("Tạo đơn"):
-                            loc = geolocator.geocode(addr_ord)
-                            if loc:
+                        ord_pick = address_form(key="addr_admin_order",
+                                                  button_label="Tạo đơn từ địa chỉ")
+                        if ord_pick:
+                            try:
                                 conn = pyodbc.connect(CONN_STR); cursor = conn.cursor()
-                                cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status, order_type) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận', N'chuỗi')", (loc.latitude, loc.longitude, "Chờ xử lý", current_admin))
+                                cursor.execute("INSERT INTO LogisticsPoints (lat, lon, status, created_by, created_at, delivery_status, order_type) VALUES (?,?,?,?, GETDATE(), N'Chờ xác nhận', N'chuỗi')", (ord_pick["lat"], ord_pick["lon"], "Chờ xử lý", current_admin))
                                 conn.commit(); conn.close()
-                                clear_admin_caches(); st.rerun()
+                                clear_admin_caches()
+                                st.success(f"Đã tạo đơn: {ord_pick['label']}")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Lỗi tạo đơn: {e}")
                     with t4:
                         st.markdown("<p style='font-size:14px; margin-bottom:10px; color:#8b949e;'>Vui lòng chọn trên bản đồ để ghim vị trí.</p>", unsafe_allow_html=True)
                         if 'temp_admin_click' in st.session_state:

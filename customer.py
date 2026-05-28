@@ -6,11 +6,28 @@ import os
 import base64
 import math
 from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError
+from address_search import address_form
 from datetime import datetime
 import pyodbc
 from config import CONN_STR
 
-geolocator = Nominatim(user_agent="umbrella_logistics_user")
+geolocator = Nominatim(user_agent="umbrella_logistics_user", timeout=10)
+
+
+def safe_geocode(address):
+    """Gọi Nominatim an toàn: trả về location hoặc None, hiện lỗi thân thiện nếu fail."""
+    if not address or not address.strip():
+        st.error("Vui lòng nhập địa chỉ.")
+        return None
+    try:
+        return geolocator.geocode(address, timeout=10)
+    except (GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError) as e:
+        st.error(f"Dịch vụ bản đồ tạm thời không phản hồi. Vui lòng thử lại hoặc chọn vị trí trực tiếp trên Map. ({type(e).__name__})")
+        return None
+    except Exception as e:
+        st.error(f"Lỗi khi tra cứu địa chỉ: {e}")
+        return None
 
 # --- HÀM TÍNH KHOẢNG CÁCH (HAVERSINE) ĐỂ TÍNH TIỀN SHIP ---
 def calculate_distance_km(lat1, lon1, lat2, lon2):
@@ -130,6 +147,7 @@ def render_page():
     if 'temp_lon' not in st.session_state: st.session_state.temp_lon = None
     if 'show_payment' not in st.session_state: st.session_state.show_payment = False
     if 'last_created_id' not in st.session_state: st.session_state.last_created_id = None 
+    if 'last_processed_click' not in st.session_state: st.session_state.last_processed_click = None
 
     # Header Profile
     col_space, col_user = st.columns([8.5, 1.5])
@@ -206,16 +224,15 @@ def render_page():
                 st.markdown("### Chọn vị trí nhận/giao", unsafe_allow_html=True)
                 st.markdown("""<div style="background-color: rgba(25, 118, 210, 0.15); border-left: 4px solid #1976D2; padding: 12px 15px; border-radius: 5px; margin-bottom: 15px;"><span style="color: #1976D2; font-weight: bold; font-size: 14px;">Nhập địa chỉ bên dưới hoặc <b>bấm trực tiếp lên bản đồ</b>. Đơn sau khi tạo sẽ được gửi cho Quản trị viên duyệt.</span></div>""", unsafe_allow_html=True)
                 
-                addr_input = st.text_input("Nhập địa chỉ (TP Vinh, Nghệ An):")
-                if st.button("TÌM KIẾM VỊ TRÍ", use_container_width=True):
-                    with st.spinner("Đang tìm vị trí..."):
-                        loc = geolocator.geocode(addr_input)
-                        if loc:
-                            st.session_state.temp_lat = loc.latitude; st.session_state.temp_lon = loc.longitude
-                            st.session_state.show_payment = False 
-                            st.success("Đã ghim vị trí trên bản đồ!")
-                        else: st.error("Không tìm thấy địa chỉ!")
-
+                addr_pick = address_form(key="addr_customer_order",
+                                            button_label="Xác nhận địa chỉ")
+                if addr_pick:
+                    new_pt = (float(addr_pick["lat"]), float(addr_pick["lon"]))
+                    st.session_state.temp_lat, st.session_state.temp_lon = new_pt
+                    st.session_state.show_payment = False
+                    st.session_state.last_processed_click = new_pt
+                    st.success(f"Đã ghim: {addr_pick['label'][:80]}")
+                    st.rerun()
                 st.write("---")
                 
                 if st.session_state.temp_lat and st.session_state.temp_lon:
@@ -312,9 +329,12 @@ def render_page():
             map_data = st_folium(m_user, width="100%", height=550, key="user_create_order_map", returned_objects=["last_clicked"])
             
             if map_data and map_data.get("last_clicked"):
-                lat, lon = map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"]
-                if lat != st.session_state.temp_lat or lon != st.session_state.temp_lon:
-                    st.session_state.temp_lat = lat; st.session_state.temp_lon = lon
+                click = (map_data["last_clicked"]["lat"], map_data["last_clicked"]["lng"])
+                # Chỉ xử lý cú click MỚI (chưa từng được handle), tránh ghi đè vị trí vừa nhập từ địa chỉ
+                if st.session_state.last_processed_click != click:
+                    st.session_state.last_processed_click = click
+                    st.session_state.temp_lat = click[0]
+                    st.session_state.temp_lon = click[1]
                     st.session_state.show_payment = False 
                     st.session_state.last_created_id = None 
                     st.rerun()

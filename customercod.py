@@ -7,9 +7,26 @@ import urllib.parse
 import uuid
 from datetime import datetime
 from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError
+from address_search import address_form
 from config import CONN_STR
 
-geolocator = Nominatim(user_agent="umbrella_cod_user")
+geolocator = Nominatim(user_agent="umbrella_cod_user", timeout=10)
+
+
+def safe_geocode(address):
+    """Gọi Nominatim an toàn: trả về location hoặc None, hiện lỗi thân thiện nếu fail."""
+    if not address or not address.strip():
+        st.error("Vui lòng nhập địa chỉ.")
+        return None
+    try:
+        return geolocator.geocode(address, timeout=10)
+    except (GeocoderUnavailable, GeocoderTimedOut, GeocoderServiceError) as e:
+        st.error(f"Dịch vụ bản đồ tạm thời không phản hồi. Vui lòng thử lại hoặc chọn vị trí trực tiếp trên Map. ({type(e).__name__})")
+        return None
+    except Exception as e:
+        st.error(f"Lỗi khi tra cứu địa chỉ: {e}")
+        return None
 
 # --- HÀM TÍNH KHOẢNG CÁCH ---
 def calculate_cod_distance(lat1, lon1, lat2, lon2):
@@ -106,27 +123,25 @@ def render_cod_page():
             # BƯỚC 1: CHỌN ĐIỂM LẤY
             if st.session_state.cod_pickup is None:
                 st.markdown("""<div style="background-color: rgba(255, 152, 0, 0.15); border-left: 4px solid #FF9800; padding: 12px 15px; border-radius: 5px; margin-bottom: 15px;"><span style="color: #FF9800; font-weight: bold; font-size: 14px;">BƯỚC 1: Nhập địa chỉ LẤY HÀNG hoặc bấm lên bản đồ.</span></div>""", unsafe_allow_html=True)
-                addr_pickup = st.text_input("Tìm địa chỉ Lấy hàng:", key="search_pickup")
-                if st.button("Ghim Điểm Lấy", use_container_width=True):
-                    with st.spinner("Đang tìm..."):
-                        loc = geolocator.geocode(addr_pickup)
-                        if loc: 
-                            st.session_state.cod_pickup = (loc.latitude, loc.longitude)
-                            st.rerun()
-                        else: st.error("Không tìm thấy địa chỉ!")
+                pickup_pick = address_form(key="addr_cod_pickup",
+                                             button_label="Ghim Điểm Lấy")
+                if pickup_pick:
+                    new_pt = (float(pickup_pick["lat"]), float(pickup_pick["lon"]))
+                    st.session_state.cod_pickup = new_pt
+                    st.session_state.last_map_click = new_pt
+                    st.rerun()
 
             # BƯỚC 2: CHỌN CÁC ĐIỂM GIAO
             elif not st.session_state.cod_ready_to_pay:
                 st.markdown("""<div style="background-color: rgba(76, 175, 80, 0.15); border-left: 4px solid #4CAF50; padding: 12px 15px; border-radius: 5px; margin-bottom: 15px;"><span style="color: #4CAF50; font-weight: bold; font-size: 14px;">BƯỚC 2: Nhập địa chỉ GIAO hoặc bấm lên bản đồ để thêm điểm.</span></div>""", unsafe_allow_html=True)
                 
-                addr_drop = st.text_input("Thêm địa chỉ Giao hàng:", key="search_dropoff")
-                if st.button("Thêm Điểm Giao", use_container_width=True):
-                    with st.spinner("Đang định vị..."):
-                        loc = geolocator.geocode(addr_drop)
-                        if loc:
-                            st.session_state.cod_dropoffs.append((loc.latitude, loc.longitude))
-                            st.rerun()
-                        else: st.error("Không tìm thấy địa chỉ!")
+                drop_pick = address_form(key="addr_cod_drop",
+                                            button_label="Thêm Điểm Giao")
+                if drop_pick:
+                    new_pt = (float(drop_pick["lat"]), float(drop_pick["lon"]))
+                    st.session_state.cod_dropoffs.append(new_pt)
+                    st.session_state.last_map_click = new_pt
+                    st.rerun()
 
                 if len(st.session_state.cod_dropoffs) > 0:
                     st.write(f"---")
